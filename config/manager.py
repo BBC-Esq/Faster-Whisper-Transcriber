@@ -21,7 +21,6 @@ class ConfigManager:
         "quantization_type": "float32", 
         "device_type": "cpu",
         "show_clipboard_window": True,
-        "curate_transcription": True,
         "supported_quantizations": {
             "cpu": [],
             "cuda": []
