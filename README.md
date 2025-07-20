@@ -27,7 +27,7 @@ Activate the virtual environment.
 ### Step 3
 Run the installation script.
 ```
-install.py
+python install.py
 ```
 
 # Usage
