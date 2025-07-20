@@ -12,13 +12,12 @@ from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QGroupBox,
-    QCheckBox,
 )
 
 from core.quantization import CheckQuantizationSupport
 from core.controller import TranscriberController
 from config.manager import config_manager
-from gui.styles import apply_recording_button_style, apply_update_button_style
+from gui.styles import apply_recording_button_style, apply_update_button_style, apply_clipboard_button_style
 from gui.clipboard_window import ClipboardWindow
 
 
@@ -54,29 +53,19 @@ class MainWindow(QWidget):
         self.clipboard_window = ClipboardWindow(self)
 
         self.status_label = QLabel("")
+        font = self.status_label.font()
+        font.setPointSize(13)
+        self.status_label.setFont(font)
         layout.addWidget(self.status_label)
 
         self.record_button = QPushButton("Start Recording")
         self.record_button.clicked.connect(self._toggle_recording)
         layout.addWidget(self.record_button)
 
-        checkbox_layout = QHBoxLayout()
-
-        self.curate_checkbox = QCheckBox("Curate Transcription")
-        self.curate_checkbox.setToolTip(
-            "Basic curation such as removing double blank lines, etc.\n"
-            "before copying/displaying."
-        )
-        self.curate_checkbox.stateChanged.connect(self._on_curate_toggled)
-        checkbox_layout.addWidget(self.curate_checkbox)
-
-        self.show_clipboard_checkbox = QCheckBox("Show Clipboard Window")
-        self.show_clipboard_checkbox.setToolTip("Show/hide the clipboard history window")
-        self.show_clipboard_checkbox.setChecked(True)
-        self.show_clipboard_checkbox.stateChanged.connect(self._on_show_clipboard_toggled)
-        checkbox_layout.addWidget(self.show_clipboard_checkbox)
-
-        layout.addLayout(checkbox_layout)
+        # Clipboard toggle button
+        self.clipboard_button = QPushButton("Hide Clipboard")
+        self.clipboard_button.clicked.connect(self._toggle_clipboard)
+        layout.addWidget(self.clipboard_button)
 
         settings_group = QGroupBox("Settings")
         settings_layout = QVBoxLayout()
@@ -105,7 +94,7 @@ class MainWindow(QWidget):
         settings_group.setLayout(settings_layout)
         layout.addWidget(settings_group)
 
-        self.setFixedSize(425, 275)
+        self.setFixedSize(425, 250)
         self.setWindowFlag(Qt.WindowStaysOnTopHint)
 
         self._load_config()
@@ -137,7 +126,6 @@ class MainWindow(QWidget):
         device = config["device_type"]
         self.supported_quantizations = config["supported_quantizations"]
         show_clipboard = config["show_clipboard_window"]
-        curate = config.get("curate_transcription", False)
 
         if model in self.MODEL_CHOICES:
             self.model_dropdown.setCurrentText(model)
@@ -146,10 +134,8 @@ class MainWindow(QWidget):
         if quant in [self.quantization_dropdown.itemText(i) for i in range(self.quantization_dropdown.count())]:
             self.quantization_dropdown.setCurrentText(quant)
 
-        self.show_clipboard_checkbox.setChecked(show_clipboard)
-        self.curate_checkbox.setChecked(curate)
-        self.controller.curate = curate
         self.clipboard_window.setVisible(show_clipboard)
+        self._update_clipboard_button_text()
 
     def _save_clipboard_setting(self, show_clipboard: bool) -> None:
         config_manager.set_value("show_clipboard_window", show_clipboard)
@@ -196,11 +182,18 @@ class MainWindow(QWidget):
 
         apply_recording_button_style(self.record_button, self.is_recording)
 
-    @Slot(int)
-    def _on_show_clipboard_toggled(self, state: int) -> None:
-        show_window = self.show_clipboard_checkbox.isChecked()
-        self.clipboard_window.setVisible(show_window)
-        self._save_clipboard_setting(show_window)
+    @Slot()
+    def _toggle_clipboard(self) -> None:
+        is_visible = self.clipboard_window.isVisible()
+        self.clipboard_window.setVisible(not is_visible)
+        self._save_clipboard_setting(not is_visible)
+        self._update_clipboard_button_text()
+
+    def _update_clipboard_button_text(self) -> None:
+        if self.clipboard_window.isVisible():
+            self.clipboard_button.setText("Hide Clipboard")
+        else:
+            self.clipboard_button.setText("Show Clipboard")
 
     def update_clipboard(self, text: str) -> None:
         self.clipboard_window.update_text(text)
@@ -251,12 +244,6 @@ class MainWindow(QWidget):
             self.device_dropdown.currentText(),
         )
 
-    @Slot(int)
-    def _on_curate_toggled(self, _state: int) -> None:
-        curate_enabled = self.curate_checkbox.isChecked()
-        self.controller.curate = curate_enabled
-        config_manager.set_value("curate_transcription", curate_enabled)
-
     @Slot(str)
     def update_status(self, text: str) -> None:
         self.status_label.setText(text)
@@ -264,6 +251,7 @@ class MainWindow(QWidget):
     @Slot(bool)
     def set_widgets_enabled(self, enabled: bool) -> None:
         self.record_button.setEnabled(enabled)
+        self.clipboard_button.setEnabled(enabled)
         self.model_dropdown.setEnabled(enabled)
         self.quantization_dropdown.setEnabled(enabled)
         self.device_dropdown.setEnabled(enabled)
@@ -280,7 +268,7 @@ class MainWindow(QWidget):
         super().moveEvent(event)
 
     def closeEvent(self, event):
-        self._save_clipboard_setting(self.show_clipboard_checkbox.isChecked())
+        self._save_clipboard_setting(self.clipboard_window.isVisible())
         self.clipboard_window.close()
         self.controller.stop_all_threads()
         super().closeEvent(event)
