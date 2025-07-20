@@ -31,6 +31,8 @@ QPushButton:pressed {
 }
 """
 
+CLIPBOARD_BUTTON_STYLE = ""
+
 def apply_recording_button_style(button, is_recording: bool) -> None:
     """Apply appropriate style to recording button based on state."""
     if is_recording:
@@ -44,3 +46,7 @@ def apply_update_button_style(button, has_changes: bool) -> None:
         button.setStyleSheet(UPDATE_BUTTON_CHANGED)
     else:
         button.setStyleSheet("")  # Reset to default
+
+def apply_clipboard_button_style(button) -> None:
+    """Apply style to clipboard toggle button to match recording button."""
+    button.setStyleSheet(CLIPBOARD_BUTTON_STYLE)
