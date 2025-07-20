@@ -15,12 +15,12 @@ class TranscriberController(QObject):
     text_ready_signal = Signal(str)
     model_loaded_signal = Signal(str, str, str)
 
-    def __init__(self, samplerate: int = 44_100, channels: int = 1, dtype: str = "int16", curate: bool = False):
+    def __init__(self, samplerate: int = 44_100, channels: int = 1, dtype: str = "int16"):
         super().__init__()
 
         self.model_manager = ModelManager()
         self.audio_manager = AudioManager(samplerate, channels, dtype)
-        self.transcription_service = TranscriptionService(curate)
+        self.transcription_service = TranscriptionService(curate_text_enabled=True)
 
         self._connect_signals()
 
@@ -54,14 +54,6 @@ class TranscriberController(QObject):
 
     def stop_recording(self) -> None:
         self.audio_manager.stop_recording()
-
-    @property
-    def curate(self) -> bool:
-        return self.transcription_service.curate_enabled
-
-    @curate.setter
-    def curate(self, enabled: bool) -> None:
-        self.transcription_service.set_curation_enabled(enabled)
 
     @Slot(str, str, str)
     def _on_model_loaded(self, name: str, quant: str, device: str) -> None:
@@ -106,8 +98,6 @@ class TranscriberController(QObject):
 
     def _load_settings(self) -> None:
         settings = config_manager.get_model_settings()
-        curate = config_manager.get_value("curate_transcription", False)
-        self.transcription_service.set_curation_enabled(curate)
         self.update_model(
             settings["model_name"],
             settings["quantization_type"],
