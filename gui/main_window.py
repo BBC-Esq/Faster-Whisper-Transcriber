@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QGroupBox,
+    QRadioButton,
 )
 
 from core.quantization import CheckQuantizationSupport
@@ -37,12 +38,22 @@ class MainWindow(QWidget):
         "distil-whisper-medium.en",
         "distil-whisper-large-v3",
     ]
+    
+    TRANSLATION_CAPABLE_MODELS = [
+        "tiny",
+        "base",
+        "small",
+        "medium",
+        "large-v3",
+    ]
 
     def __init__(self, cuda_available: bool = False):
         super().__init__()
 
         config_settings = config_manager.get_model_settings()
         self.loaded_model_settings = config_settings.copy()
+        
+        self.task_mode = config_manager.get_value("task_mode", "transcribe")
 
         self.controller = TranscriberController()
         self.supported_quantizations: dict[str, list[str]] = {"cpu": [], "cuda": []}
@@ -62,7 +73,25 @@ class MainWindow(QWidget):
         self.record_button.clicked.connect(self._toggle_recording)
         layout.addWidget(self.record_button)
 
-        # Clipboard toggle button
+        task_group = QGroupBox("Mode")
+        task_layout = QHBoxLayout()
+        
+        self.transcribe_radio = QRadioButton("Transcribe")
+        self.translate_radio = QRadioButton("Translate to English")
+        
+        if self.task_mode == "transcribe":
+            self.transcribe_radio.setChecked(True)
+        else:
+            self.translate_radio.setChecked(True)
+        
+        self.transcribe_radio.toggled.connect(self._on_task_mode_changed)
+        self.translate_radio.toggled.connect(self._on_task_mode_changed)
+        
+        task_layout.addWidget(self.transcribe_radio)
+        task_layout.addWidget(self.translate_radio)
+        task_group.setLayout(task_layout)
+        layout.addWidget(task_group)
+
         self.clipboard_button = QPushButton("Hide Clipboard")
         self.clipboard_button.clicked.connect(self._toggle_clipboard)
         layout.addWidget(self.clipboard_button)
@@ -94,7 +123,7 @@ class MainWindow(QWidget):
         settings_group.setLayout(settings_layout)
         layout.addWidget(settings_group)
 
-        self.setFixedSize(425, 250)
+        self.setFixedSize(425, 280)
         self.setWindowFlag(Qt.WindowStaysOnTopHint)
 
         self._load_config()
@@ -126,6 +155,7 @@ class MainWindow(QWidget):
         device = config["device_type"]
         self.supported_quantizations = config["supported_quantizations"]
         show_clipboard = config["show_clipboard_window"]
+        self.task_mode = config.get("task_mode", "transcribe")
 
         if model in self.MODEL_CHOICES:
             self.model_dropdown.setCurrentText(model)
@@ -136,13 +166,42 @@ class MainWindow(QWidget):
 
         self.clipboard_window.setVisible(show_clipboard)
         self._update_clipboard_button_text()
+        self._update_translation_availability(model)
 
     def _save_clipboard_setting(self, show_clipboard: bool) -> None:
         config_manager.set_value("show_clipboard_window", show_clipboard)
 
+    def _is_translation_capable(self, model_name: str) -> bool:
+        return model_name in self.TRANSLATION_CAPABLE_MODELS
+
+    def _update_translation_availability(self, model_name: str) -> None:
+        translation_capable = self._is_translation_capable(model_name)
+        
+        self.translate_radio.setEnabled(translation_capable)
+        
+        if not translation_capable:
+            self.translate_radio.setToolTip("Translation not supported by the model currently loaded")
+            if self.translate_radio.isChecked():
+                self.transcribe_radio.setChecked(True)
+                self.task_mode = "transcribe"
+                config_manager.set_value("task_mode", self.task_mode)
+                self.controller.set_task_mode(self.task_mode)
+        else:
+            self.translate_radio.setToolTip("")
+
     @Slot()
     def _on_dropdown_changed(self) -> None:
         self._update_button_state()
+
+    @Slot()
+    def _on_task_mode_changed(self) -> None:
+        if self.transcribe_radio.isChecked():
+            self.task_mode = "transcribe"
+        else:
+            self.task_mode = "translate"
+        
+        config_manager.set_value("task_mode", self.task_mode)
+        self.controller.set_task_mode(self.task_mode)
 
     def _update_button_state(self) -> None:
         current_selections = {
@@ -168,6 +227,7 @@ class MainWindow(QWidget):
             "device_type": device_type
         }
         self._update_button_state()
+        self._update_translation_availability(model_name)
 
     @Slot()
     def _toggle_recording(self) -> None:
@@ -256,6 +316,10 @@ class MainWindow(QWidget):
         self.quantization_dropdown.setEnabled(enabled)
         self.device_dropdown.setEnabled(enabled)
         self.update_model_btn.setEnabled(enabled)
+        self.transcribe_radio.setEnabled(enabled)
+        
+        current_model = self.model_dropdown.currentText()
+        self.translate_radio.setEnabled(enabled and self._is_translation_capable(current_model))
 
         if not enabled and self.is_recording:
             self.is_recording = False
