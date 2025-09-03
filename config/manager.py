@@ -20,6 +20,7 @@ class ConfigManager:
         "model_name": "base.en",
         "quantization_type": "float32", 
         "device_type": "cpu",
+        "task_mode": "transcribe",
         "show_clipboard_window": True,
         "supported_quantizations": {
             "cpu": [],
