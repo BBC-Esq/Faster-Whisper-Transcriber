@@ -20,11 +20,19 @@ class TranscriberController(QObject):
 
         self.model_manager = ModelManager()
         self.audio_manager = AudioManager(samplerate, channels, dtype)
-        self.transcription_service = TranscriptionService(curate_text_enabled=True)
+
+        task_mode = config_manager.get_value("task_mode", "transcribe")
+        self.transcription_service = TranscriptionService(
+            curate_text_enabled=True,
+            task_mode=task_mode
+        )
 
         self._connect_signals()
-
         self._load_settings()
+    
+    def set_task_mode(self, mode: str) -> None:
+        self.transcription_service.set_task_mode(mode)
+        self.update_status_signal.emit(f"Mode: {mode.capitalize()}")
 
     def _connect_signals(self) -> None:
 
