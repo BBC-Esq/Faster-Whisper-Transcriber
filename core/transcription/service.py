@@ -10,17 +10,21 @@ class _TranscriptionThread(QThread):
     transcription_done = Signal(str)
     error_occurred = Signal(str)
 
-    def __init__(self, model, expected_id: int, audio_file: str | Path) -> None:
+    def __init__(self, model, expected_id: int, audio_file: str | Path, task_mode: str = "transcribe") -> None:
         super().__init__()
         self.model = model
         self.expected_id = expected_id
         self.audio_file = str(audio_file)
+        self.task_mode = task_mode
 
     def run(self) -> None:
         try:
             if id(self.model) != self.expected_id or self.isInterruptionRequested():
                 return
-            segments, _ = self.model.transcribe(self.audio_file)
+            segments, _ = self.model.transcribe(
+                self.audio_file,
+                task=self.task_mode
+            )
             if self.isInterruptionRequested():
                 return
             self.transcription_done.emit("\n".join(s.text for s in segments))
@@ -37,9 +41,10 @@ class TranscriptionService(QObject):
     transcription_completed = Signal(str)
     transcription_error = Signal(str)
 
-    def __init__(self, curate_text_enabled: bool = False):
+    def __init__(self, curate_text_enabled: bool = False, task_mode: str = "transcribe"):
         super().__init__()
         self.curate_enabled = curate_text_enabled
+        self.task_mode = task_mode
         self._transcription_thread: Optional[_TranscriptionThread] = None
 
     def transcribe_file(self, model, expected_id: int, audio_file: str | Path) -> None:
@@ -48,7 +53,7 @@ class TranscriptionService(QObject):
             return
 
         self._transcription_thread = _TranscriptionThread(
-            model, expected_id, str(audio_file)
+            model, expected_id, str(audio_file), self.task_mode
         )
         self._transcription_thread.transcription_done.connect(self._on_transcription_done)
         self._transcription_thread.error_occurred.connect(self.transcription_error)
@@ -65,6 +70,9 @@ class TranscriptionService(QObject):
 
         text = "\n".join(line.lstrip() for line in text.splitlines())
         self.transcription_completed.emit(text)
+
+    def set_task_mode(self, mode: str) -> None:
+        self.task_mode = mode
 
     def set_curation_enabled(self, enabled: bool) -> None:
         self.curate_enabled = enabled
