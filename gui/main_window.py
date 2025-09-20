@@ -46,7 +46,6 @@ class MainWindow(QWidget):
         "small",
         "medium",
         "large-v3",
-        "large-v3-turbo",
     ]
 
     def __init__(self, cuda_available: bool = False):
