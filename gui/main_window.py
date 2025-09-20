@@ -34,6 +34,7 @@ class MainWindow(QWidget):
         "medium",
         "medium.en",
         "large-v3",
+        "large-v3-turbo",
         "distil-whisper-small.en",
         "distil-whisper-medium.en",
         "distil-whisper-large-v3",
@@ -45,6 +46,7 @@ class MainWindow(QWidget):
         "small",
         "medium",
         "large-v3",
+        "large-v3-turbo",
     ]
 
     def __init__(self, cuda_available: bool = False):
@@ -270,7 +272,14 @@ class MainWindow(QWidget):
             "distil-whisper-large-v3": ["float16", "bfloat16", "float32"],
         }
 
-        options = distil.get(model, self.supported_quantizations.get(device, []))
+        special_models = {
+            "large-v3-turbo": ["float16", "bfloat16", "float32"],
+        }
+
+        if model in special_models:
+            options = special_models[model]
+        else:
+            options = distil.get(model, self.supported_quantizations.get(device, []))
 
         if device == "cpu":
             options = [opt for opt in options if opt not in ["float16", "bfloat16"]]
