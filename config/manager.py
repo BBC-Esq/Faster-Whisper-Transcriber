@@ -1,17 +1,15 @@
-"""
-Centralized configuration management for the Whisper transcriber.
-"""
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import yaml
 
 from utils import get_resource_path
+from core.logging_config import get_logger
+from core.exceptions import ConfigurationError
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class ConfigManager:
@@ -25,7 +23,8 @@ class ConfigManager:
         "supported_quantizations": {
             "cpu": [],
             "cuda": []
-        }
+        },
+        "curate_transcription": True
     }
 
     def __init__(self):
@@ -51,6 +50,9 @@ class ConfigManager:
         except yaml.YAMLError as e:
             logger.error(f"Error parsing config file: {e}")
             config = {}
+        except Exception as e:
+            logger.error(f"Unexpected error loading config: {e}")
+            config = {}
 
         merged_config = self.DEFAULT_CONFIG.copy()
         self._deep_update(merged_config, config)
@@ -68,7 +70,7 @@ class ConfigManager:
             
         except Exception as e:
             logger.error(f"Failed to save configuration: {e}")
-            raise
+            raise ConfigurationError(f"Failed to save configuration: {e}") from e
 
     def update_config(self, updates: Dict[str, Any]) -> None:
         config = self.load_config()

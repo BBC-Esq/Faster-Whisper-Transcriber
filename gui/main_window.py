@@ -1,6 +1,3 @@
-"""
-Main application window.
-"""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt, Slot
@@ -13,40 +10,21 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QGroupBox,
     QRadioButton,
+    QMessageBox,
 )
 
 from core.quantization import CheckQuantizationSupport
 from core.controller import TranscriberController
+from core.models.metadata import ModelMetadata
 from config.manager import config_manager
-from gui.styles import apply_recording_button_style, apply_update_button_style, apply_clipboard_button_style
+from gui.styles import apply_recording_button_style, apply_update_button_style
 from gui.clipboard_window import ClipboardWindow
+from core.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class MainWindow(QWidget):
-
-    MODEL_CHOICES = [
-        "tiny",
-        "tiny.en",
-        "base",
-        "base.en",
-        "small",
-        "small.en",
-        "medium",
-        "medium.en",
-        "large-v3",
-        "large-v3-turbo",
-        "distil-whisper-small.en",
-        "distil-whisper-medium.en",
-        "distil-whisper-large-v3",
-    ]
-    
-    TRANSLATION_CAPABLE_MODELS = [
-        "tiny",
-        "base",
-        "small",
-        "medium",
-        "large-v3",
-    ]
 
     def __init__(self, cuda_available: bool = False):
         super().__init__()
@@ -59,6 +37,7 @@ class MainWindow(QWidget):
         self.controller = TranscriberController()
         self.supported_quantizations: dict[str, list[str]] = {"cpu": [], "cuda": []}
         self.is_recording = False
+        self.cuda_available = cuda_available
 
         layout = QVBoxLayout(self)
 
@@ -103,7 +82,7 @@ class MainWindow(QWidget):
 
         row.addWidget(QLabel("Model"))
         self.model_dropdown = QComboBox()
-        self.model_dropdown.addItems(self.MODEL_CHOICES)
+        self.model_dropdown.addItems(ModelMetadata.get_all_model_names())
         row.addWidget(self.model_dropdown)
 
         row.addWidget(QLabel("Quantization"))
@@ -147,36 +126,43 @@ class MainWindow(QWidget):
         self.controller.enable_widgets_signal.connect(self.set_widgets_enabled)
         self.controller.text_ready_signal.connect(self.update_clipboard)
         self.controller.model_loaded_signal.connect(self._on_model_loaded_success)
+        self.controller.error_occurred.connect(self._show_error_dialog)
+
+        logger.info("MainWindow initialized")
 
     def _load_config(self) -> None:
-        config = config_manager.load_config()
-        
-        model = config["model_name"]
-        quant = config["quantization_type"]
-        device = config["device_type"]
-        self.supported_quantizations = config["supported_quantizations"]
-        show_clipboard = config["show_clipboard_window"]
-        self.task_mode = config.get("task_mode", "transcribe")
+        try:
+            config = config_manager.load_config()
+            
+            model = config["model_name"]
+            quant = config["quantization_type"]
+            device = config["device_type"]
+            self.supported_quantizations = config["supported_quantizations"]
+            show_clipboard = config["show_clipboard_window"]
+            self.task_mode = config.get("task_mode", "transcribe")
 
-        if model in self.MODEL_CHOICES:
-            self.model_dropdown.setCurrentText(model)
-        self.device_dropdown.setCurrentText(device)
-        self.update_quantization_options()
-        if quant in [self.quantization_dropdown.itemText(i) for i in range(self.quantization_dropdown.count())]:
-            self.quantization_dropdown.setCurrentText(quant)
+            model_names = ModelMetadata.get_all_model_names()
+            if model in model_names:
+                self.model_dropdown.setCurrentText(model)
+            self.device_dropdown.setCurrentText(device)
+            self.update_quantization_options()
+            if quant in [self.quantization_dropdown.itemText(i) for i in range(self.quantization_dropdown.count())]:
+                self.quantization_dropdown.setCurrentText(quant)
 
-        self.clipboard_window.setVisible(show_clipboard)
-        self._update_clipboard_button_text()
-        self._update_translation_availability(model)
+            self.clipboard_window.setVisible(show_clipboard)
+            self._update_clipboard_button_text()
+            self._update_translation_availability(model)
+        except Exception as e:
+            logger.error(f"Failed to load config: {e}")
 
     def _save_clipboard_setting(self, show_clipboard: bool) -> None:
-        config_manager.set_value("show_clipboard_window", show_clipboard)
-
-    def _is_translation_capable(self, model_name: str) -> bool:
-        return model_name in self.TRANSLATION_CAPABLE_MODELS
+        try:
+            config_manager.set_value("show_clipboard_window", show_clipboard)
+        except Exception as e:
+            logger.warning(f"Failed to save clipboard setting: {e}")
 
     def _update_translation_availability(self, model_name: str) -> None:
-        translation_capable = self._is_translation_capable(model_name)
+        translation_capable = ModelMetadata.supports_translation(model_name)
         
         self.translate_radio.setEnabled(translation_capable)
         
@@ -185,10 +171,18 @@ class MainWindow(QWidget):
             if self.translate_radio.isChecked():
                 self.transcribe_radio.setChecked(True)
                 self.task_mode = "transcribe"
-                config_manager.set_value("task_mode", self.task_mode)
+                try:
+                    config_manager.set_value("task_mode", self.task_mode)
+                except Exception as e:
+                    logger.warning(f"Failed to save task mode: {e}")
                 self.controller.set_task_mode(self.task_mode)
         else:
             self.translate_radio.setToolTip("")
+
+    @Slot(str, str)
+    def _show_error_dialog(self, title: str, message: str) -> None:
+        logger.error(f"Error dialog shown - {title}: {message}")
+        QMessageBox.warning(self, title, message)
 
     @Slot()
     def _on_dropdown_changed(self) -> None:
@@ -201,7 +195,10 @@ class MainWindow(QWidget):
         else:
             self.task_mode = "translate"
         
-        config_manager.set_value("task_mode", self.task_mode)
+        try:
+            config_manager.set_value("task_mode", self.task_mode)
+        except Exception as e:
+            logger.warning(f"Failed to save task mode: {e}")
         self.controller.set_task_mode(self.task_mode)
 
     def _update_button_state(self) -> None:
@@ -263,33 +260,11 @@ class MainWindow(QWidget):
             self.record_button.setText("Start Recording")
             apply_recording_button_style(self.record_button, self.is_recording)
 
-    def get_quantization_options(self, model: str, device: str) -> list[str]:
-        distil = {
-            "distil-whisper-small.en": ["float16", "bfloat16", "float32"],
-            "distil-whisper-medium.en": ["float16", "bfloat16", "float32"],
-            "distil-whisper-large-v2": ["float16", "float32"],
-            "distil-whisper-large-v3": ["float16", "bfloat16", "float32"],
-        }
-
-        special_models = {
-            "large-v3-turbo": ["float16", "bfloat16", "float32"],
-        }
-
-        if model in special_models:
-            options = special_models[model]
-        else:
-            options = distil.get(model, self.supported_quantizations.get(device, []))
-
-        if device == "cpu":
-            options = [opt for opt in options if opt not in ["float16", "bfloat16"]]
-
-        return options
-
     @Slot()
     def update_quantization_options(self) -> None:
         model = self.model_dropdown.currentText()
         device = self.device_dropdown.currentText()
-        opts = self.get_quantization_options(model, device)
+        opts = ModelMetadata.get_quantization_options(model, device, self.supported_quantizations)
 
         self.quantization_dropdown.blockSignals(True)
         current_text = self.quantization_dropdown.currentText()
@@ -327,7 +302,7 @@ class MainWindow(QWidget):
         self.transcribe_radio.setEnabled(enabled)
         
         current_model = self.model_dropdown.currentText()
-        self.translate_radio.setEnabled(enabled and self._is_translation_capable(current_model))
+        self.translate_radio.setEnabled(enabled and ModelMetadata.supports_translation(current_model))
 
         if not enabled and self.is_recording:
             self.is_recording = False
@@ -343,4 +318,5 @@ class MainWindow(QWidget):
         self._save_clipboard_setting(self.clipboard_window.isVisible())
         self.clipboard_window.close()
         self.controller.stop_all_threads()
+        logger.info("Application closing")
         super().closeEvent(event)

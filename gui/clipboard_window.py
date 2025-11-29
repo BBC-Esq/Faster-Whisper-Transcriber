@@ -1,6 +1,3 @@
-"""
-Clipboard window for displaying transcription results.
-"""
 from __future__ import annotations
 
 from PySide6.QtCore import Qt
@@ -11,6 +8,10 @@ from PySide6.QtWidgets import (
     QTextEdit,
     QApplication,
 )
+
+from core.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class ClipboardWindow(QWidget):
@@ -51,7 +52,11 @@ class ClipboardWindow(QWidget):
         super().showEvent(event)
 
     def _copy_to_clipboard(self) -> None:
-        app = QApplication.instance()
-        if app:
-            text = self.text_display.toPlainText()
-            app.clipboard().setText(text)
+        try:
+            app = QApplication.instance()
+            if app:
+                text = self.text_display.toPlainText()
+                app.clipboard().setText(text)
+                logger.debug("Text copied to clipboard")
+        except Exception as e:
+            logger.warning(f"Failed to copy to clipboard: {e}")

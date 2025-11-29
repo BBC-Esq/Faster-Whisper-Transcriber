@@ -1,20 +1,21 @@
-"""
-Model loading utilities.
-"""
 from __future__ import annotations
 
-import logging
 from typing import Optional
 
 import psutil
 from faster_whisper import WhisperModel
 
-logger = logging.getLogger(__name__)
+from core.logging_config import get_logger
+from core.exceptions import ModelLoadError
+
+logger = get_logger(__name__)
+
 
 def _make_repo_string(model_name: str, quantization_type: str) -> str:
     if model_name.startswith("distil-whisper"):
         return f"ctranslate2-4you/{model_name}-ct2-{quantization_type}"
     return f"ctranslate2-4you/whisper-{model_name}-ct2-{quantization_type}"
+
 
 def load_model(
     model_name: str,
@@ -24,7 +25,7 @@ def load_model(
 ) -> WhisperModel:
 
     repo = _make_repo_string(model_name, quantization_type)
-    logger.info("Loading Whisper model %s on %s …", repo, device_type)
+    logger.info(f"Loading Whisper model {repo} on {device_type}")
 
     if cpu_threads is None:
         cpu_threads = psutil.cpu_count(logical=False) or 1
@@ -36,11 +37,11 @@ def load_model(
             compute_type=quantization_type,
             cpu_threads=cpu_threads,
         )
-    except Exception as exc:
-        logger.exception("Failed to load model %s", repo)
-        raise RuntimeError(f"Error loading model {repo}: {exc}") from exc
+    except Exception as e:
+        logger.exception(f"Failed to load model {repo}")
+        raise ModelLoadError(f"Error loading model {repo}: {e}") from e
 
-    logger.info("Model %s ready", repo)
+    logger.info(f"Model {repo} ready")
     return model
 
 
