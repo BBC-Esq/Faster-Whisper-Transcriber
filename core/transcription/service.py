@@ -23,6 +23,7 @@ class _TranscriptionThread(QThread):
                 return
             segments, _ = self.model.transcribe(
                 self.audio_file,
+                language=None,
                 task=self.task_mode
             )
             if self.isInterruptionRequested():
