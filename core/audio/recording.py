@@ -1,24 +1,17 @@
-"""
-Audio-capture thread and tiny WAV helpers.
-
-Placed in: myapp/core/audio/recording.py
-"""
 from __future__ import annotations
 
-import logging
 import queue
-import tempfile
 import threading
-import wave
 from contextlib import contextmanager
-from pathlib import Path
 from typing import Iterator
 
 import sounddevice as sd
 from PySide6.QtCore import QThread, Signal
 
+from core.logging_config import get_logger
+from core.exceptions import AudioRecordingError
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class RecordingThread(QThread):
@@ -33,35 +26,53 @@ class RecordingThread(QThread):
         self.channels = channels
         self.dtype = dtype
         self.buffer: queue.Queue = queue.Queue()
+        self._stream_error: str | None = None
 
     @contextmanager
     def _audio_stream(self) -> Iterator[None]:
-        stream = sd.InputStream(
-            samplerate=self.samplerate,
-            channels=self.channels,
-            dtype=self.dtype,
-            callback=self._audio_callback,
-        )
+        stream = None
         try:
+            stream = sd.InputStream(
+                samplerate=self.samplerate,
+                channels=self.channels,
+                dtype=self.dtype,
+                callback=self._audio_callback,
+            )
             with stream:
                 yield
+        except sd.PortAudioError as e:
+            logger.error(f"Audio device error: {e}")
+            raise AudioRecordingError(f"Audio device error: {e}") from e
+        except Exception as e:
+            logger.error(f"Failed to create audio stream: {e}")
+            raise AudioRecordingError(f"Failed to create audio stream: {e}") from e
         finally:
-            stream.close()
+            if stream is not None:
+                try:
+                    stream.close()
+                except Exception as e:
+                    logger.warning(f"Error closing audio stream: {e}")
 
-    def _audio_callback(self, indata, frames, timestamp, status) -> None:  # noqa: D401, N802
+    def _audio_callback(self, indata, frames, timestamp, status) -> None:
         if status:
-            logger.warning(status)
+            logger.warning(f"Audio callback status: {status}")
+            self._stream_error = str(status)
         self.buffer.put(indata.copy())
 
-    def run(self) -> None:  # noqa: D401
+    def run(self) -> None:
         self.update_status_signal.emit("Recording.")
         try:
             with self._audio_stream():
                 gate = threading.Event()
                 while not self.isInterruptionRequested():
-                    gate.wait(timeout=1.0)
-        except Exception as exc:  # pragma: no cover
-            self.recording_error.emit(f"Recording error: {exc}")
+                    gate.wait(timeout=0.1)
+                    if self._stream_error:
+                        logger.warning(f"Stream error during recording: {self._stream_error}")
+        except AudioRecordingError as e:
+            self.recording_error.emit(str(e))
+        except Exception as e:
+            logger.exception("Unexpected recording error")
+            self.recording_error.emit(f"Recording error: {e}")
         finally:
             self.recording_finished.emit()
 
@@ -72,20 +83,18 @@ class RecordingThread(QThread):
     def _sample_width_from_dtype(dtype: str) -> int:
         return {"int16": 2, "int32": 4, "float32": 4}.get(dtype, 2)
 
-    def dump_to_wav(self, outfile: str | Path) -> Path:
+    def get_buffer_contents(self) -> list:
+        contents = []
+        while not self.buffer.empty():
+            try:
+                contents.append(self.buffer.get_nowait())
+            except queue.Empty:
+                break
+        return contents
 
-        outfile = Path(outfile)
-        with wave.open(str(outfile), "wb") as wf:
-            wf.setnchannels(self.channels)
-            wf.setsampwidth(self._sample_width_from_dtype(self.dtype))
-            wf.setframerate(self.samplerate)
-
-            while not self.buffer.empty():
-                wf.writeframes(self.buffer.get().tobytes())
-        return outfile
-
-    def dump_to_temp_wav(self) -> Path:
-
-        tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
-        tmp.close()
-        return self.dump_to_wav(tmp.name)
+    def clear_buffer(self) -> None:
+        while not self.buffer.empty():
+            try:
+                self.buffer.get_nowait()
+            except queue.Empty:
+                break
