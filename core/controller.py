@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 from PySide6.QtCore import QObject, Signal, Slot
 from PySide6.QtWidgets import QApplication
 
@@ -68,6 +70,18 @@ class TranscriberController(QObject):
     def stop_recording(self) -> None:
         self.audio_manager.stop_recording()
 
+    def transcribe_file(self, file_path: str) -> None:
+        model, expected_id = self.model_manager.get_model()
+        if model and expected_id:
+            self.enable_widgets_signal.emit(False)
+            self.update_status_signal.emit(f"Transcribing {Path(file_path).name}...")
+            self.transcription_service.transcribe_file(
+                model, expected_id, file_path, is_temp_file=False
+            )
+        else:
+            self.update_status_signal.emit("No model loaded")
+            self.error_occurred.emit("Transcription Error", "No model is loaded to process audio")
+
     @Slot(str, str, str)
     def _on_model_loaded(self, name: str, quant: str, device: str) -> None:
         try:
@@ -90,7 +104,9 @@ class TranscriberController(QObject):
     def _on_audio_ready(self, audio_file: str) -> None:
         model, expected_id = self.model_manager.get_model()
         if model and expected_id:
-            self.transcription_service.transcribe_file(model, expected_id, audio_file)
+            self.transcription_service.transcribe_file(
+                model, expected_id, audio_file, is_temp_file=True
+            )
         else:
             self.update_status_signal.emit("No model loaded")
             self.enable_widgets_signal.emit(True)
