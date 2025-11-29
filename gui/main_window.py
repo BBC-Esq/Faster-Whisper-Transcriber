@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QRadioButton,
     QMessageBox,
+    QFileDialog,
 )
 
 from core.quantization import CheckQuantizationSupport
@@ -22,6 +23,11 @@ from gui.clipboard_window import ClipboardWindow
 from core.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+SUPPORTED_AUDIO_EXTENSIONS = [
+    ".aac", ".amr", ".asf", ".avi", ".flac", ".m4a",
+    ".mkv", ".mp3", ".mp4", ".wav", ".webm", ".wma"
+]
 
 
 class MainWindow(QWidget):
@@ -52,6 +58,10 @@ class MainWindow(QWidget):
         self.record_button = QPushButton("Start Recording")
         self.record_button.clicked.connect(self._toggle_recording)
         layout.addWidget(self.record_button)
+
+        self.transcribe_file_button = QPushButton("Transcribe Audio File")
+        self.transcribe_file_button.clicked.connect(self._select_and_transcribe_file)
+        layout.addWidget(self.transcribe_file_button)
 
         task_group = QGroupBox("Mode")
         task_layout = QHBoxLayout()
@@ -103,7 +113,7 @@ class MainWindow(QWidget):
         settings_group.setLayout(settings_layout)
         layout.addWidget(settings_group)
 
-        self.setFixedSize(425, 280)
+        self.setFixedSize(425, 320)
         self.setWindowFlag(Qt.WindowStaysOnTopHint)
 
         self._load_config()
@@ -241,6 +251,22 @@ class MainWindow(QWidget):
         apply_recording_button_style(self.record_button, self.is_recording)
 
     @Slot()
+    def _select_and_transcribe_file(self) -> None:
+        extensions_filter = " ".join(f"*{ext}" for ext in SUPPORTED_AUDIO_EXTENSIONS)
+        file_filter = f"Audio Files ({extensions_filter});;All Files (*)"
+        
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Select Audio File",
+            "",
+            file_filter
+        )
+        
+        if file_path:
+            logger.info(f"Selected file for transcription: {file_path}")
+            self.controller.transcribe_file(file_path)
+
+    @Slot()
     def _toggle_clipboard(self) -> None:
         is_visible = self.clipboard_window.isVisible()
         self.clipboard_window.setVisible(not is_visible)
@@ -294,6 +320,7 @@ class MainWindow(QWidget):
     @Slot(bool)
     def set_widgets_enabled(self, enabled: bool) -> None:
         self.record_button.setEnabled(enabled)
+        self.transcribe_file_button.setEnabled(enabled)
         self.clipboard_button.setEnabled(enabled)
         self.model_dropdown.setEnabled(enabled)
         self.quantization_dropdown.setEnabled(enabled)
