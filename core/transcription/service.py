@@ -16,12 +16,20 @@ class _TranscriptionThread(QThread):
     transcription_done = Signal(str)
     error_occurred = Signal(str)
 
-    def __init__(self, model, expected_id: int, audio_file: str | Path, task_mode: str = "transcribe") -> None:
+    def __init__(
+        self,
+        model,
+        expected_id: int,
+        audio_file: str | Path,
+        task_mode: str = "transcribe",
+        is_temp_file: bool = True
+    ) -> None:
         super().__init__()
         self.model = model
         self.expected_id = expected_id
         self.audio_file = Path(audio_file)
         self.task_mode = task_mode
+        self.is_temp_file = is_temp_file
 
     def run(self) -> None:
         try:
@@ -50,7 +58,8 @@ class _TranscriptionThread(QThread):
             logger.exception("Transcription failed")
             self.error_occurred.emit(f"Transcription failed: {e}")
         finally:
-            temp_file_manager.release(self.audio_file)
+            if self.is_temp_file:
+                temp_file_manager.release(self.audio_file)
 
 
 class TranscriptionService(QObject):
@@ -64,17 +73,24 @@ class TranscriptionService(QObject):
         self.task_mode = task_mode
         self._transcription_thread: Optional[_TranscriptionThread] = None
 
-    def transcribe_file(self, model, expected_id: int, audio_file: str | Path) -> None:
+    def transcribe_file(
+        self,
+        model,
+        expected_id: int,
+        audio_file: str | Path,
+        is_temp_file: bool = True
+    ) -> None:
         if not model:
             error_msg = "No model available for transcription"
             logger.error(error_msg)
             self.transcription_error.emit(error_msg)
-            temp_file_manager.release(Path(audio_file))
+            if is_temp_file:
+                temp_file_manager.release(Path(audio_file))
             return
 
         try:
             self._transcription_thread = _TranscriptionThread(
-                model, expected_id, str(audio_file), self.task_mode
+                model, expected_id, str(audio_file), self.task_mode, is_temp_file
             )
             self._transcription_thread.transcription_done.connect(self._on_transcription_done)
             self._transcription_thread.error_occurred.connect(self._on_transcription_error)
@@ -83,7 +99,8 @@ class TranscriptionService(QObject):
         except Exception as e:
             logger.exception("Failed to start transcription thread")
             self.transcription_error.emit(f"Failed to start transcription: {e}")
-            temp_file_manager.release(Path(audio_file))
+            if is_temp_file:
+                temp_file_manager.release(Path(audio_file))
 
     def _on_transcription_done(self, text: str) -> None:
         if self.curate_enabled:
