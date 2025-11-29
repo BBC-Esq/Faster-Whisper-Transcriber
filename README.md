@@ -43,5 +43,5 @@ Choose the Whisper model you want to use and click "Update Settings". The first 
 ### Step 3
 Start recording...speak...stop recording, then use ```control + v``` or right-click and "paste" the transcription into whatever program you want; for example, into the browser window for ChatGPT.<br><br>
 
-![image](https://github.com/user-attachments/assets/04d5f36c-11af-4247-8347-b51c17119aff)
+<img width="1086" height="520" alt="image" src="https://github.com/user-attachments/assets/2e5b613b-6a14-4274-9fc1-2cf8a6cde9cc" />
 * Not that the transcripton is automatically copied to the clipboard.  The "Copy to Clipboard" button allows you to edit the transcription and re-copy it.
