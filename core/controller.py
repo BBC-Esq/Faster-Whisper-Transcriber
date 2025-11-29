@@ -1,4 +1,3 @@
-# core/controller.py
 from __future__ import annotations
 
 from PySide6.QtCore import QObject, Signal, Slot
@@ -8,12 +7,17 @@ from config.manager import config_manager
 from core.models.manager import ModelManager
 from core.audio.manager import AudioManager
 from core.transcription.service import TranscriptionService
+from core.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class TranscriberController(QObject):
     update_status_signal = Signal(str)
     enable_widgets_signal = Signal(bool)
     text_ready_signal = Signal(str)
     model_loaded_signal = Signal(str, str, str)
+    error_occurred = Signal(str, str)
 
     def __init__(self, samplerate: int = 44_100, channels: int = 1, dtype: str = "int16"):
         super().__init__()
@@ -22,20 +26,21 @@ class TranscriberController(QObject):
         self.audio_manager = AudioManager(samplerate, channels, dtype)
 
         task_mode = config_manager.get_value("task_mode", "transcribe")
+        curate_enabled = config_manager.get_value("curate_transcription", True)
         self.transcription_service = TranscriptionService(
-            curate_text_enabled=True,
+            curate_text_enabled=curate_enabled,
             task_mode=task_mode
         )
 
         self._connect_signals()
         self._load_settings()
+        logger.info("TranscriberController initialized")
     
     def set_task_mode(self, mode: str) -> None:
         self.transcription_service.set_task_mode(mode)
         self.update_status_signal.emit(f"Mode: {mode.capitalize()}")
 
     def _connect_signals(self) -> None:
-
         self.model_manager.model_loaded.connect(self._on_model_loaded)
         self.model_manager.model_error.connect(self._on_model_error)
 
@@ -65,15 +70,21 @@ class TranscriberController(QObject):
 
     @Slot(str, str, str)
     def _on_model_loaded(self, name: str, quant: str, device: str) -> None:
-        config_manager.set_model_settings(name, quant, device)
+        try:
+            config_manager.set_model_settings(name, quant, device)
+        except Exception as e:
+            logger.warning(f"Failed to save model settings: {e}")
+        
         self.update_status_signal.emit(f"Model {name} ready on {device}")
         self.enable_widgets_signal.emit(True)
         self.model_loaded_signal.emit(name, quant, device)
 
     @Slot(str)
     def _on_model_error(self, error: str) -> None:
-        self.update_status_signal.emit(error)
+        logger.error(f"Model error: {error}")
+        self.update_status_signal.emit("Model load failed")
         self.enable_widgets_signal.emit(True)
+        self.error_occurred.emit("Model Error", error)
 
     @Slot(str)
     def _on_audio_ready(self, audio_file: str) -> None:
@@ -83,11 +94,14 @@ class TranscriberController(QObject):
         else:
             self.update_status_signal.emit("No model loaded")
             self.enable_widgets_signal.emit(True)
+            self.error_occurred.emit("Audio Error", "No model is loaded to process audio")
 
     @Slot(str)
     def _on_audio_error(self, error: str) -> None:
-        self.update_status_signal.emit(error)
+        logger.error(f"Audio error: {error}")
+        self.update_status_signal.emit("Recording failed")
         self.enable_widgets_signal.emit(True)
+        self.error_occurred.emit("Audio Error", error)
 
     @Slot(str)
     def _on_transcription_completed(self, text: str) -> None:
@@ -101,8 +115,10 @@ class TranscriberController(QObject):
 
     @Slot(str)
     def _on_transcription_error(self, error: str) -> None:
-        self.update_status_signal.emit(error)
+        logger.error(f"Transcription error: {error}")
+        self.update_status_signal.emit("Transcription failed")
         self.enable_widgets_signal.emit(True)
+        self.error_occurred.emit("Transcription Error", error)
 
     def _load_settings(self) -> None:
         settings = config_manager.get_model_settings()
@@ -113,6 +129,8 @@ class TranscriberController(QObject):
         )
 
     def stop_all_threads(self) -> None:
+        logger.info("Stopping all threads")
         self.audio_manager.cleanup()
         self.transcription_service.cleanup()
         self.model_manager.cleanup()
+        logger.info("All threads stopped")
