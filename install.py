@@ -21,7 +21,7 @@ priority_libs = {
             "nvidia-cudnn-cu12==9.10.2.21",
         ],
         "CPU": [
-            "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp311-cp311-win_amd64.whl"
+            "https://download.pytorch.org/whl/cpu/torch-2.9.0%2Bcpu-cp311-cp311-win_amd64.whl#sha256=389e1e0b8083fd355f7caf5ba82356b5e01c318998bd575dbf2285a0d8137089"
         ]
     },
     "cp312": {
@@ -34,7 +34,7 @@ priority_libs = {
             "nvidia-cudnn-cu12==9.10.2.21",
         ],
         "CPU": [
-            "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-win_amd64.whl"
+            "https://download.pytorch.org/whl/cpu/torch-2.9.0%2Bcpu-cp312-cp312-win_amd64.whl#sha256=e438061b87ec7dd6018fca9f975219889aa0a3f6cdc3ea10dd0ae2bc7f1c47ce"
         ]
     },
     "cp313": {
@@ -47,7 +47,7 @@ priority_libs = {
             "nvidia-cudnn-cu12==9.10.2.21",
         ],
         "CPU": [
-            "https://download.pytorch.org/whl/cpu/torch-2.8.0%2Bcpu-cp312-cp312-win_amd64.whl"
+            "https://download.pytorch.org/whl/cpu/torch-2.9.0%2Bcpu-cp313-cp313-win_amd64.whl#sha256=728372e3f58c5826445f677746e5311c1935c1a7c59599f73a49ded850e038e8"
         ]
     }
 }
