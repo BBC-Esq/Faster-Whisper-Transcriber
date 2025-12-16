@@ -35,6 +35,8 @@ class MainWindow(QWidget):
     def __init__(self, cuda_available: bool = False):
         super().__init__()
 
+        self.setWindowTitle("Faster Whisper Transcriber")
+
         config_settings = config_manager.get_model_settings()
         self.loaded_model_settings = config_settings.copy()
         
