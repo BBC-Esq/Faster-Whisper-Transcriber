@@ -12,14 +12,8 @@
 - 📋 **Auto-Clipboard** — Transcriptions are automatically copied and ready to paste
 - ⚡ **GPU Accelerated** — CUDA support for fast transcription
 
-## 📋 Requirements
-
-| Requirement | Notes |
-|-------------|-------|
-| [Python 3.11](https://www.python.org/downloads/release/python-3119/) or [3.12](https://www.python.org/downloads/release/python-31210/) | Required |
-| [Git](https://git-scm.com/downloads) | Required |
-| [git-lfs](https://git-lfs.com/) | Required |
-| Windows | Linux/macOS support welcome — testers needed! |
+## 📋 Compatibility
+- Compatible with [Python 3.11](https://www.python.org/downloads/release/python-3119/), [3.12](https://www.python.org/downloads/release/python-31210/) or [3.13](https://www.python.org/downloads/release/python-31311/)
 
 ## 🚀 Installation
 ```bash
@@ -45,7 +39,3 @@ python main.py
 3. **Paste** anywhere with `Ctrl+V` — the transcription is already in your clipboard!
 
 > **Note:** The "Copy to Clipboard" button in the sidebar lets you edit and re-copy the transcription if needed.
-
-## 🤝 Contributing
-
-Interested in helping bring this to Linux or macOS? Feel free to open an issue or PR!
