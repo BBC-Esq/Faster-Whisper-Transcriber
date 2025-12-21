@@ -2,7 +2,7 @@
 
 > Voice-to-text transcription powered by CTranslate2 — speak, transcribe, and paste into your favorite LLM in seconds.
 
-<img width="425" height="358" alt="image" src="https://github.com/user-attachments/assets/f4279548-876d-4ea2-bb58-266646f40631" />
+<img width="530" height="387" alt="image" src="https://github.com/user-attachments/assets/aa205c1d-61d6-4950-be3c-d64d8cae68f2" />
 
 ## ✨ Features
 
