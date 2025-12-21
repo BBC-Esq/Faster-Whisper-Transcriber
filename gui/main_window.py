@@ -15,6 +15,9 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QFormLayout,
     QSizePolicy,
+    QDialog,
+    QDialogButtonBox,
+    QSpinBox,
 )
 
 from core.quantization import CheckQuantizationSupport
@@ -41,6 +44,44 @@ SUPPORTED_AUDIO_EXTENSIONS = [
     ".webm",
     ".wma",
 ]
+
+
+class BatchSizeDialog(QDialog):
+    def __init__(self, parent: QWidget | None = None, default_value: int = 16):
+        super().__init__(parent)
+        self.setWindowTitle("Batch Size")
+        self.setModal(True)
+
+        root = QVBoxLayout(self)
+        root.setContentsMargins(14, 14, 14, 14)
+        root.setSpacing(10)
+
+        label = QLabel("Set batch size for file transcription.\nUse 1 for non-batched transcription.")
+        label.setWordWrap(True)
+        root.addWidget(label)
+
+        row = QHBoxLayout()
+        row.setSpacing(10)
+
+        batch_label = QLabel("Batch size")
+        self.spin = QSpinBox()
+        self.spin.setRange(1, 256)
+        self.spin.setValue(max(1, int(default_value)))
+        self.spin.setSingleStep(1)
+
+        row.addWidget(batch_label)
+        row.addWidget(self.spin, 1)
+        root.addLayout(row)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        root.addWidget(buttons)
+
+        self.setFixedWidth(360)
+
+    def batch_size(self) -> int:
+        return int(self.spin.value())
 
 
 class MainWindow(QMainWindow):
@@ -366,9 +407,16 @@ class MainWindow(QMainWindow):
 
         file_path, _ = QFileDialog.getOpenFileName(self, "Select Audio File", "", file_filter)
 
-        if file_path:
-            logger.info(f"Selected file for transcription: {file_path}")
-            self.controller.transcribe_file(file_path)
+        if not file_path:
+            return
+
+        dlg = BatchSizeDialog(self, default_value=16)
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        batch_size = dlg.batch_size()
+        logger.info(f"Selected file for transcription: {file_path} (batch_size={batch_size})")
+        self.controller.transcribe_file(file_path, batch_size=batch_size)
 
     def _host_rect_global(self) -> QRect:
         top_left = self.mapToGlobal(self.rect().topLeft())
