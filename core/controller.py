@@ -37,7 +37,7 @@ class TranscriberController(QObject):
         self._connect_signals()
         self._load_settings()
         logger.info("TranscriberController initialized")
-    
+
     def set_task_mode(self, mode: str) -> None:
         self.transcription_service.set_task_mode(mode)
         self.update_status_signal.emit(f"Mode: {mode.capitalize()}")
@@ -57,7 +57,7 @@ class TranscriberController(QObject):
         )
         self.transcription_service.transcription_completed.connect(self._on_transcription_completed)
         self.transcription_service.transcription_error.connect(self._on_transcription_error)
-    
+
     def update_model(self, model_name: str, quant: str, device: str) -> None:
         self.enable_widgets_signal.emit(False)
         self.update_status_signal.emit(f"Loading model {model_name}...")
@@ -70,13 +70,17 @@ class TranscriberController(QObject):
     def stop_recording(self) -> None:
         self.audio_manager.stop_recording()
 
-    def transcribe_file(self, file_path: str) -> None:
+    def transcribe_file(self, file_path: str, batch_size: int | None = None) -> None:
         model, expected_id = self.model_manager.get_model()
         if model and expected_id:
             self.enable_widgets_signal.emit(False)
             self.update_status_signal.emit(f"Transcribing {Path(file_path).name}...")
             self.transcription_service.transcribe_file(
-                model, expected_id, file_path, is_temp_file=False
+                model,
+                expected_id,
+                file_path,
+                is_temp_file=False,
+                batch_size=batch_size,
             )
         else:
             self.update_status_signal.emit("No model loaded")
@@ -88,7 +92,7 @@ class TranscriberController(QObject):
             config_manager.set_model_settings(name, quant, device)
         except Exception as e:
             logger.warning(f"Failed to save model settings: {e}")
-        
+
         self.update_status_signal.emit(f"Model {name} ready on {device}")
         self.enable_widgets_signal.emit(True)
         self.model_loaded_signal.emit(name, quant, device)
@@ -105,7 +109,11 @@ class TranscriberController(QObject):
         model, expected_id = self.model_manager.get_model()
         if model and expected_id:
             self.transcription_service.transcribe_file(
-                model, expected_id, audio_file, is_temp_file=True
+                model,
+                expected_id,
+                audio_file,
+                is_temp_file=True,
+                batch_size=None,
             )
         else:
             self.update_status_signal.emit("No model loaded")
