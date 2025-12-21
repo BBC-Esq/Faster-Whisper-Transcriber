@@ -1,7 +1,10 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Slot, QRect
+from pathlib import Path
+
+from PySide6.QtCore import Qt, Slot, QRect, QEvent
 from PySide6.QtWidgets import (
+    QApplication,
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -130,6 +133,11 @@ class MainWindow(QMainWindow):
         self.controller.text_ready_signal.connect(self.update_clipboard)
         self.controller.model_loaded_signal.connect(self._on_model_loaded_success)
         self.controller.error_occurred.connect(self._show_error_dialog)
+
+        self.setAcceptDrops(True)
+        app = QApplication.instance()
+        if app:
+            app.installEventFilter(self)
 
         logger.info("MainWindow initialized")
 
@@ -400,6 +408,33 @@ class MainWindow(QMainWindow):
 
         apply_recording_button_style(self.record_button, self.is_recording)
 
+    def _is_supported_audio_file(self, file_path: str) -> bool:
+        try:
+            return Path(file_path).suffix.lower() in SUPPORTED_AUDIO_EXTENSIONS
+        except Exception:
+            return False
+
+    def _transcribe_specific_file(self, file_path: str) -> None:
+        if not file_path:
+            return
+
+        if not self._is_supported_audio_file(file_path):
+            self.update_status("Unsupported file type")
+            QMessageBox.warning(self, "Unsupported File", "Please drop a supported audio file.")
+            return
+
+        if not self.transcribe_file_button.isEnabled():
+            self.update_status("Busy")
+            return
+
+        dlg = BatchSizeDialog(self, default_value=16)
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        batch_size = dlg.batch_size()
+        logger.info(f"Selected file for transcription: {file_path} (batch_size={batch_size})")
+        self.controller.transcribe_file(file_path, batch_size=batch_size)
+
     @Slot()
     def _select_and_transcribe_file(self) -> None:
         extensions_filter = " ".join(f"*{ext}" for ext in SUPPORTED_AUDIO_EXTENSIONS)
@@ -410,13 +445,7 @@ class MainWindow(QMainWindow):
         if not file_path:
             return
 
-        dlg = BatchSizeDialog(self, default_value=16)
-        if dlg.exec() != QDialog.Accepted:
-            return
-
-        batch_size = dlg.batch_size()
-        logger.info(f"Selected file for transcription: {file_path} (batch_size={batch_size})")
-        self.controller.transcribe_file(file_path, batch_size=batch_size)
+        self._transcribe_specific_file(file_path)
 
     def _host_rect_global(self) -> QRect:
         top_left = self.mapToGlobal(self.rect().topLeft())
@@ -511,6 +540,38 @@ class MainWindow(QMainWindow):
             self.is_recording = False
             self.record_button.setText("Start Recording")
             apply_recording_button_style(self.record_button, self.is_recording)
+
+    def _extract_first_supported_drop(self, event) -> str | None:
+        md = event.mimeData()
+        if not md or not md.hasUrls():
+            return None
+
+        for url in md.urls():
+            if not url.isLocalFile():
+                continue
+            p = url.toLocalFile()
+            if p and self._is_supported_audio_file(p):
+                return p
+        return None
+
+    def eventFilter(self, obj, event):
+        et = event.type()
+        if et in (QEvent.DragEnter, QEvent.DragMove):
+            p = self._extract_first_supported_drop(event)
+            if p:
+                event.acceptProposedAction()
+                return True
+            return False
+
+        if et == QEvent.Drop:
+            p = self._extract_first_supported_drop(event)
+            if p:
+                event.acceptProposedAction()
+                self._transcribe_specific_file(p)
+                return True
+            return False
+
+        return super().eventFilter(obj, event)
 
     def moveEvent(self, event):
         super().moveEvent(event)
