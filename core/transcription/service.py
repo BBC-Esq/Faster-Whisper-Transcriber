@@ -1,62 +1,75 @@
 from __future__ import annotations
 
-from typing import Optional
 from pathlib import Path
 
-from PySide6.QtCore import QObject, Signal, QThread
+from PySide6.QtCore import QObject, Signal, QRunnable, QThreadPool
 
 from core.temp_file_manager import temp_file_manager
 from core.logging_config import get_logger
-from core.exceptions import TranscriptionError
 
 logger = get_logger(__name__)
 
 
-class _TranscriptionThread(QThread):
+class _TranscriberSignals(QObject):
     transcription_done = Signal(str)
     error_occurred = Signal(str)
 
+
+class _TranscriptionRunnable(QRunnable):
     def __init__(
         self,
         model,
         expected_id: int,
         audio_file: str | Path,
         task_mode: str = "transcribe",
-        is_temp_file: bool = True
+        is_temp_file: bool = True,
+        batch_size: int | None = None,
     ) -> None:
         super().__init__()
+        self.setAutoDelete(True)
         self.model = model
         self.expected_id = expected_id
         self.audio_file = Path(audio_file)
         self.task_mode = task_mode
         self.is_temp_file = is_temp_file
+        self.batch_size = batch_size
+        self.signals = _TranscriberSignals()
 
     def run(self) -> None:
         try:
             if id(self.model) != self.expected_id:
                 logger.warning("Model changed during transcription setup")
                 return
-                
-            if self.isInterruptionRequested():
-                return
-            
+
             logger.info(f"Starting transcription: {self.audio_file}")
-            segments, _ = self.model.transcribe(
-                str(self.audio_file),
-                language=None,
-                task=self.task_mode
-            )
-            
-            if self.isInterruptionRequested():
-                return
-            
-            text = "\n".join(s.text for s in segments)
+
+            if self.batch_size is not None and int(self.batch_size) > 1:
+                from faster_whisper import BatchedInferencePipeline
+                batched_model = BatchedInferencePipeline(model=self.model)
+                segments, _ = batched_model.transcribe(
+                    str(self.audio_file),
+                    language=None,
+                    task=self.task_mode,
+                    batch_size=int(self.batch_size),
+                )
+            else:
+                segments, _ = self.model.transcribe(
+                    str(self.audio_file),
+                    language=None,
+                    task=self.task_mode,
+                )
+
+            text_parts = []
+            for segment in segments:
+                text_parts.append(segment.text)
+
+            text = "\n".join(text_parts)
             logger.info("Transcription completed successfully")
-            self.transcription_done.emit(text)
-            
+            self.signals.transcription_done.emit(text)
+
         except Exception as e:
             logger.exception("Transcription failed")
-            self.error_occurred.emit(f"Transcription failed: {e}")
+            self.signals.error_occurred.emit(f"Transcription failed: {e}")
         finally:
             if self.is_temp_file:
                 temp_file_manager.release(self.audio_file)
@@ -71,14 +84,15 @@ class TranscriptionService(QObject):
         super().__init__()
         self.curate_enabled = curate_text_enabled
         self.task_mode = task_mode
-        self._transcription_thread: Optional[_TranscriptionThread] = None
+        self._thread_pool = QThreadPool.globalInstance()
 
     def transcribe_file(
         self,
         model,
         expected_id: int,
         audio_file: str | Path,
-        is_temp_file: bool = True
+        is_temp_file: bool = True,
+        batch_size: int | None = None,
     ) -> None:
         if not model:
             error_msg = "No model available for transcription"
@@ -89,15 +103,20 @@ class TranscriptionService(QObject):
             return
 
         try:
-            self._transcription_thread = _TranscriptionThread(
-                model, expected_id, str(audio_file), self.task_mode, is_temp_file
+            runnable = _TranscriptionRunnable(
+                model=model,
+                expected_id=expected_id,
+                audio_file=str(audio_file),
+                task_mode=self.task_mode,
+                is_temp_file=is_temp_file,
+                batch_size=batch_size,
             )
-            self._transcription_thread.transcription_done.connect(self._on_transcription_done)
-            self._transcription_thread.error_occurred.connect(self._on_transcription_error)
-            self._transcription_thread.start()
+            runnable.signals.transcription_done.connect(self._on_transcription_done)
+            runnable.signals.error_occurred.connect(self._on_transcription_error)
+            self._thread_pool.start(runnable)
             self.transcription_started.emit()
         except Exception as e:
-            logger.exception("Failed to start transcription thread")
+            logger.exception("Failed to start transcription")
             self.transcription_error.emit(f"Failed to start transcription: {e}")
             if is_temp_file:
                 temp_file_manager.release(Path(audio_file))
@@ -125,10 +144,5 @@ class TranscriptionService(QObject):
         self.curate_enabled = enabled
 
     def cleanup(self) -> None:
-        if self._transcription_thread and self._transcription_thread.isRunning():
-            self._transcription_thread.requestInterruption()
-            self._transcription_thread.wait(5000)
-            if self._transcription_thread.isRunning():
-                logger.warning("Transcription thread did not stop in time")
-                self._transcription_thread.terminate()
+        self._thread_pool.waitForDone(5000)
         logger.debug("TranscriptionService cleanup complete")
