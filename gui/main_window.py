@@ -62,6 +62,7 @@ class MainWindow(QMainWindow):
 
         self.clipboard_window = ClipboardSideWindow(self, width=360)
         self.clipboard_window.switch_side_requested.connect(self._switch_clipboard_side)
+        self.clipboard_window.user_closed.connect(self._on_clipboard_closed)
 
         self._clipboard_target_visible = False
         self._clipboard_side = "right"
@@ -96,12 +97,12 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
         root = QVBoxLayout(central)
-        root.setContentsMargins(10, 10, 10, 10)
+        root.setContentsMargins(5, 5, 5, 5)
         root.setSpacing(8)
 
-        actions_group = QGroupBox("Actions")
+        actions_group = QGroupBox("")
         actions_layout = QVBoxLayout()
-        actions_layout.setContentsMargins(8, 8, 8, 8)
+        actions_layout.setContentsMargins(2, 2, 2, 2)
         actions_layout.setSpacing(8)
 
         buttons_row = QHBoxLayout()
@@ -150,9 +151,9 @@ class MainWindow(QMainWindow):
         actions_group.setLayout(actions_layout)
         root.addWidget(actions_group)
 
-        settings_group = QGroupBox("Model Settings")
+        settings_group = QGroupBox("")
         settings_layout = QVBoxLayout()
-        settings_layout.setContentsMargins(8, 8, 8, 8)
+        settings_layout.setContentsMargins(2, 2, 2, 2)
         settings_layout.setSpacing(8)
 
         self.model_dropdown = QComboBox()
@@ -219,9 +220,15 @@ class MainWindow(QMainWindow):
 
         apply_recording_button_style(self.record_button, False)
 
-        self.resize(425, 320)
-        self.setMinimumSize(425, 320)
+        self.resize(425, 280)
+        self.setMinimumSize(425, 280)
         self.setWindowFlag(Qt.WindowStaysOnTopHint)
+
+    @Slot()
+    def _on_clipboard_closed(self) -> None:
+        self._clipboard_target_visible = False
+        self._update_clipboard_button_text()
+        self._save_clipboard_setting(False)
 
     def _load_config(self) -> None:
         try:
@@ -370,6 +377,7 @@ class MainWindow(QMainWindow):
     def _show_clipboard(self, animate: bool = True) -> None:
         self._clipboard_target_visible = True
         self._update_clipboard_button_text()
+        self.clipboard_window.dock_and_reset_size()
         host_rect = self._host_rect_global()
         self.clipboard_window.show_beside(host_rect, gap=10, animate=animate, side=self._clipboard_side)
         self._save_clipboard_setting(True)
@@ -392,7 +400,7 @@ class MainWindow(QMainWindow):
     def _switch_clipboard_side(self) -> None:
         self._clipboard_side = "left" if self._clipboard_side == "right" else "right"
         self.clipboard_window.set_side(self._clipboard_side)
-        if self.clipboard_window.isVisible():
+        if self.clipboard_window.isVisible() and self.clipboard_window.is_docked():
             self.clipboard_window.move_to_side(self._host_rect_global(), self._clipboard_side, gap=10, animate=True)
 
     def _update_clipboard_button_text(self) -> None:
@@ -458,12 +466,12 @@ class MainWindow(QMainWindow):
 
     def moveEvent(self, event):
         super().moveEvent(event)
-        if self.clipboard_window.isVisible():
+        if self.clipboard_window.isVisible() and self.clipboard_window.is_docked():
             self.clipboard_window.reposition_to_host(self._host_rect_global(), gap=10)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if self.clipboard_window.isVisible():
+        if self.clipboard_window.isVisible() and self.clipboard_window.is_docked():
             self.clipboard_window.reposition_to_host(self._host_rect_global(), gap=10)
 
     def closeEvent(self, event):
