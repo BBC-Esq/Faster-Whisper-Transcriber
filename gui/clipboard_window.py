@@ -250,13 +250,20 @@ class ClipboardSideWindow(QWidget):
         new_side = "left" if new_side == "left" else "right"
         self.set_side(new_side)
 
-        if not self.isVisible() or not self._docked:
+        if not self.isVisible():
             return
+
+        self._docked = True
+        self._internal_geometry_change = True
+        try:
+            self.resize(self._desired_width, self._default_height)
+        finally:
+            self._internal_geometry_change = False
 
         self._stop_animation()
         current = self.geometry()
-        w = current.width()
-        h = max(host_rect.height(), current.height(), self.minimumHeight())
+        w = self.width()
+        h = max(host_rect.height(), self.height(), self.minimumHeight())
         _, end_rect = self._compute_rects(host_rect, gap, self._side, w, h)
 
         if not animate:
@@ -288,10 +295,10 @@ class ClipboardSideWindow(QWidget):
 
     def moveEvent(self, event):
         super().moveEvent(event)
-        if self.isVisible() and not self._internal_geometry_change:
+        if self.isVisible() and not self._internal_geometry_change and event.spontaneous():
             self._docked = False
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        if self.isVisible() and not self._internal_geometry_change:
+        if self.isVisible() and not self._internal_geometry_change and event.spontaneous():
             self._docked = False
