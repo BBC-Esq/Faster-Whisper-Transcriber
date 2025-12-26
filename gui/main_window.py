@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Slot, QRect, QEvent
+from PySide6.QtCore import Qt, Slot, QRect, QEvent, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -457,6 +457,8 @@ class MainWindow(QMainWindow):
         self.clipboard_window.dock_and_reset_size()
         host_rect = self._host_rect_global()
         self.clipboard_window.show_beside(host_rect, gap=10, animate=animate, side=self._clipboard_side)
+        QTimer.singleShot(0, self.clipboard_window.dock_and_reset_size)
+        QTimer.singleShot(0, lambda: self.clipboard_window.reposition_to_host(self._host_rect_global(), gap=10))
         self._save_clipboard_setting(True)
 
     def _hide_clipboard(self, animate: bool = True) -> None:
