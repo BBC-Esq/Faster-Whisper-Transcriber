@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 import queue
-import threading
 from contextlib import contextmanager
-from typing import Iterator
+from pathlib import Path
+from typing import Iterator, Optional
+import wave
 
 import sounddevice as sd
 from PySide6.QtCore import QThread, Signal
@@ -15,31 +16,42 @@ logger = get_logger(__name__)
 
 
 class RecordingThread(QThread):
-
     update_status_signal = Signal(str)
     recording_error = Signal(str)
-    recording_finished = Signal()
+    recording_finished = Signal(str)
 
-    def __init__(self, samplerate: int = 44_100, channels: int = 1, dtype: str = "int16") -> None:
+    def __init__(
+        self,
+        output_path: str | Path,
+        samplerate: int = 44_100,
+        channels: int = 1,
+        dtype: str = "int16",
+        latency: str = "high",
+    ) -> None:
         super().__init__()
+        self.output_path = Path(output_path)
         self.samplerate = samplerate
         self.channels = channels
         self.dtype = dtype
-        self.buffer: queue.Queue = queue.Queue()
-        self._stream_error: str | None = None
+        self.latency = latency
+
+        self._audio_q: queue.Queue[bytes] = queue.Queue()
+        self._overflow_count: int = 0
+        self._stream_error: Optional[str] = None
 
     @contextmanager
-    def _audio_stream(self) -> Iterator[None]:
-        stream = None
+    def _audio_stream(self) -> Iterator[sd.RawInputStream]:
+        stream: sd.RawInputStream | None = None
         try:
-            stream = sd.InputStream(
+            stream = sd.RawInputStream(
                 samplerate=self.samplerate,
                 channels=self.channels,
                 dtype=self.dtype,
+                latency=self.latency,
                 callback=self._audio_callback,
             )
             with stream:
-                yield
+                yield stream
         except sd.PortAudioError as e:
             logger.error(f"Audio device error: {e}")
             raise AudioRecordingError(f"Audio device error: {e}") from e
@@ -53,28 +65,58 @@ class RecordingThread(QThread):
                 except Exception as e:
                     logger.warning(f"Error closing audio stream: {e}")
 
-    def _audio_callback(self, indata, frames, timestamp, status) -> None:
+    def _audio_callback(self, indata, frames, time_info, status) -> None:
         if status:
-            logger.warning(f"Audio callback status: {status}")
-            self._stream_error = str(status)
-        self.buffer.put(indata.copy())
+            msg = str(status)
+            self._stream_error = msg
+            self._overflow_count += 1
+        try:
+            self._audio_q.put_nowait(bytes(indata))
+        except queue.Full:
+            self._overflow_count += 1
 
     def run(self) -> None:
         self.update_status_signal.emit("Recording.")
         try:
-            with self._audio_stream():
-                gate = threading.Event()
-                while not self.isInterruptionRequested():
-                    gate.wait(timeout=0.1)
-                    if self._stream_error:
-                        logger.warning(f"Stream error during recording: {self._stream_error}")
+            self.output_path.parent.mkdir(parents=True, exist_ok=True)
+
+            with wave.open(str(self.output_path), "wb") as wf:
+                wf.setnchannels(self.channels)
+                wf.setsampwidth(self._sample_width_from_dtype(self.dtype))
+                wf.setframerate(self.samplerate)
+
+                with self._audio_stream():
+                    while not self.isInterruptionRequested():
+                        try:
+                            chunk = self._audio_q.get(timeout=0.2)
+                            wf.writeframes(chunk)
+                        except queue.Empty:
+                            pass
+
+                    while True:
+                        try:
+                            chunk = self._audio_q.get_nowait()
+                            wf.writeframes(chunk)
+                        except queue.Empty:
+                            break
+
+            if self._overflow_count > 0:
+                logger.warning(
+                    f"Recording completed with {self._overflow_count} overflow/underflow events. "
+                    f"Last status: {self._stream_error}"
+                )
+                self.recording_error.emit(
+                    f"Audio stream had {self._overflow_count} overflow/underflow events. "
+                    f"Some audio may be missing. Try increasing latency/buffer."
+                )
+
+            self.recording_finished.emit(str(self.output_path))
+
         except AudioRecordingError as e:
             self.recording_error.emit(str(e))
         except Exception as e:
             logger.exception("Unexpected recording error")
             self.recording_error.emit(f"Recording error: {e}")
-        finally:
-            self.recording_finished.emit()
 
     def stop(self) -> None:
         self.requestInterruption()
@@ -82,19 +124,3 @@ class RecordingThread(QThread):
     @staticmethod
     def _sample_width_from_dtype(dtype: str) -> int:
         return {"int16": 2, "int32": 4, "float32": 4}.get(dtype, 2)
-
-    def get_buffer_contents(self) -> list:
-        contents = []
-        while not self.buffer.empty():
-            try:
-                contents.append(self.buffer.get_nowait())
-            except queue.Empty:
-                break
-        return contents
-
-    def clear_buffer(self) -> None:
-        while not self.buffer.empty():
-            try:
-                self.buffer.get_nowait()
-            except queue.Empty:
-                break
