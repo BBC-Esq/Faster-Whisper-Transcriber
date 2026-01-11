@@ -7,8 +7,10 @@ from tkinter import messagebox
 
 
 full_install_libs = [
-    "PySide6==6.9.2"
+    "PySide6==6.9.2",
+    "pynput==1.8.1",
 ]
+
 
 priority_libs = {
     "cp311": {
