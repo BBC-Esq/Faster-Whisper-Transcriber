@@ -12,6 +12,7 @@ logger = get_logger(__name__)
 
 class _TranscriberSignals(QObject):
     transcription_done = Signal(str)
+    progress_updated = Signal(int, int, float)
     error_occurred = Signal(str)
 
 
@@ -46,25 +47,36 @@ class _TranscriptionRunnable(QRunnable):
             if self.batch_size is not None and int(self.batch_size) > 1:
                 from faster_whisper import BatchedInferencePipeline
                 batched_model = BatchedInferencePipeline(model=self.model)
-                segments, _ = batched_model.transcribe(
+                segments, info = batched_model.transcribe(
                     str(self.audio_file),
                     language=None,
                     task=self.task_mode,
                     batch_size=int(self.batch_size),
                 )
             else:
-                segments, _ = self.model.transcribe(
+                segments, info = self.model.transcribe(
                     str(self.audio_file),
                     language=None,
                     task=self.task_mode,
                 )
 
+            total_duration = info.duration if info and hasattr(info, 'duration') else 0
+            
             text_parts = []
+            segment_count = 0
+            
             for segment in segments:
+                segment_count += 1
                 text_parts.append(segment.text)
+                
+                if total_duration > 0:
+                    progress_percent = min(100, (segment.end / total_duration) * 100)
+                    self.signals.progress_updated.emit(segment_count, -1, progress_percent)
+                else:
+                    self.signals.progress_updated.emit(segment_count, -1, -1)
 
             text = "\n".join(text_parts)
-            logger.info("Transcription completed successfully")
+            logger.info(f"Transcription completed successfully ({segment_count} segments)")
             self.signals.transcription_done.emit(text)
 
         except Exception as e:
@@ -78,6 +90,7 @@ class _TranscriptionRunnable(QRunnable):
 class TranscriptionService(QObject):
     transcription_started = Signal()
     transcription_completed = Signal(str)
+    transcription_progress = Signal(int, int, float)
     transcription_error = Signal(str)
 
     def __init__(self, curate_text_enabled: bool = False, task_mode: str = "transcribe"):
@@ -112,6 +125,7 @@ class TranscriptionService(QObject):
                 batch_size=batch_size,
             )
             runnable.signals.transcription_done.connect(self._on_transcription_done)
+            runnable.signals.progress_updated.connect(self._on_progress_updated)
             runnable.signals.error_occurred.connect(self._on_transcription_error)
             self._thread_pool.start(runnable)
             self.transcription_started.emit()
@@ -131,6 +145,9 @@ class TranscriptionService(QObject):
 
         text = "\n".join(line.lstrip() for line in text.splitlines())
         self.transcription_completed.emit(text)
+
+    def _on_progress_updated(self, segment_num: int, total_segments: int, percent: float) -> None:
+        self.transcription_progress.emit(segment_num, total_segments, percent)
 
     def _on_transcription_error(self, error: str) -> None:
         logger.error(f"Transcription error: {error}")

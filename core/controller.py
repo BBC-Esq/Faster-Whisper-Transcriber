@@ -59,6 +59,7 @@ class TranscriberController(QObject):
         self.transcription_service.transcription_started.connect(
             lambda: self.update_status_signal.emit("Transcribing...")
         )
+        self.transcription_service.transcription_progress.connect(self._on_transcription_progress)
         self.transcription_service.transcription_completed.connect(self._on_transcription_completed)
         self.transcription_service.transcription_error.connect(self._on_transcription_error)
 
@@ -130,6 +131,13 @@ class TranscriberController(QObject):
         self.update_status_signal.emit("Recording failed")
         self.enable_widgets_signal.emit(True)
         self.error_occurred.emit("Audio Error", error)
+
+    @Slot(int, int, float)
+    def _on_transcription_progress(self, segment_num: int, total_segments: int, percent: float) -> None:
+        if percent >= 0:
+            self.update_status_signal.emit(f"Transcribing... {percent:.0f}% (segment {segment_num})")
+        else:
+            self.update_status_signal.emit(f"Transcribing... segment {segment_num}")
 
     @Slot(str)
     def _on_transcription_completed(self, text: str) -> None:
