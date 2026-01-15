@@ -8,6 +8,7 @@ from PySide6.QtWidgets import QApplication
 from config.manager import config_manager
 from core.models.manager import ModelManager
 from core.audio.manager import AudioManager
+from core.audio.device_utils import get_optimal_audio_settings
 from core.transcription.service import TranscriptionService
 from core.logging_config import get_logger
 
@@ -21,8 +22,11 @@ class TranscriberController(QObject):
     model_loaded_signal = Signal(str, str, str)
     error_occurred = Signal(str, str)
 
-    def __init__(self, samplerate: int = 44_100, channels: int = 1, dtype: str = "int16"):
+    def __init__(self):
         super().__init__()
+
+        samplerate, channels, dtype = get_optimal_audio_settings()
+        logger.info(f"Audio settings: {samplerate} Hz, {channels} ch, {dtype}")
 
         self.model_manager = ModelManager()
         self.audio_manager = AudioManager(samplerate, channels, dtype)
