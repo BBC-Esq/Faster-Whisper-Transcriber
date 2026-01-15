@@ -1,4 +1,10 @@
+from __future__ import annotations
+
 from pynput import keyboard
+
+from core.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class GlobalHotkey:
@@ -6,16 +12,27 @@ class GlobalHotkey:
         self.on_toggle = on_toggle
         self.listener = None
 
-    def start(self):
-        def for_press(key):
-            if key == keyboard.Key.f9:
-                self.on_toggle()
+    def start(self) -> bool:
+        try:
+            def on_press(key):
+                if key == keyboard.Key.f9:
+                    self.on_toggle()
 
-        self.listener = keyboard.Listener(on_press=for_press)
-        self.listener.daemon = True
-        self.listener.start()
+            self.listener = keyboard.Listener(on_press=on_press)
+            self.listener.daemon = True
+            self.listener.start()
+            logger.info("Global hotkey listener started (F9 to toggle recording)")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to start global hotkey listener: {e}")
+            return False
 
-    def stop(self):
+    def stop(self) -> None:
         if self.listener is not None:
-            self.listener.stop()
-            self.listener = None
+            try:
+                self.listener.stop()
+                logger.debug("Global hotkey listener stopped")
+            except Exception as e:
+                logger.warning(f"Error stopping hotkey listener: {e}")
+            finally:
+                self.listener = None
