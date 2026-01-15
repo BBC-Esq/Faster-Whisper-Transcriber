@@ -1,7 +1,10 @@
 from __future__ import annotations
-from core.hotkeys import GlobalHotkey
-from PySide6.QtCore import Qt, Slot, QRect, Signal
+
+from pathlib import Path
+
+from PySide6.QtCore import Qt, Slot, QRect, QEvent, QTimer, Signal
 from PySide6.QtWidgets import (
+    QApplication,
     QMainWindow,
     QWidget,
     QVBoxLayout,
@@ -23,6 +26,7 @@ from PySide6.QtWidgets import (
 from core.quantization import CheckQuantizationSupport
 from core.controller import TranscriberController
 from core.models.metadata import ModelMetadata
+from core.hotkeys import GlobalHotkey
 from config.manager import config_manager
 from gui.styles import APP_STYLESHEET, apply_recording_button_style, apply_update_button_style, apply_clipboard_button_style
 from gui.clipboard_window import ClipboardSideWindow
@@ -112,12 +116,11 @@ class MainWindow(QMainWindow):
 
         self._build_ui()
 
-        self.hotkey_toggle_recording.connect(self._toggle_recording)
+        self.hotkey_toggle_recording.connect(self._toggle_recording, Qt.QueuedConnection)
         self.global_hotkey = GlobalHotkey(lambda: self.hotkey_toggle_recording.emit())
         self.global_hotkey.start()
 
         self._load_config()
-
 
         if not self.supported_quantizations.get("cpu") or (self.cuda_available and not self.supported_quantizations.get("cuda")):
             quantization_checker = CheckQuantizationSupport()
@@ -139,6 +142,11 @@ class MainWindow(QMainWindow):
         self.controller.model_loaded_signal.connect(self._on_model_loaded_success)
         self.controller.error_occurred.connect(self._show_error_dialog)
 
+        self.setAcceptDrops(True)
+        app = QApplication.instance()
+        if app:
+            app.installEventFilter(self)
+
         logger.info("MainWindow initialized")
 
     def _build_ui(self) -> None:
@@ -159,9 +167,8 @@ class MainWindow(QMainWindow):
 
         self.record_button = QPushButton("Start Recording")
         self.record_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.record_button.setToolTip("Start recording from your microphone. Click again to stop and transcribe.")
+        self.record_button.setToolTip("Click or press F9 to start recording. Click or press F9 again to stop and transcribe.")
         self.record_button.clicked.connect(self._toggle_recording)
-
         buttons_row.addWidget(self.record_button, 2)
 
         self.transcribe_file_button = QPushButton("Transcribe Audio File")
@@ -409,6 +416,33 @@ class MainWindow(QMainWindow):
 
         apply_recording_button_style(self.record_button, self.is_recording)
 
+    def _is_supported_audio_file(self, file_path: str) -> bool:
+        try:
+            return Path(file_path).suffix.lower() in SUPPORTED_AUDIO_EXTENSIONS
+        except Exception:
+            return False
+
+    def _transcribe_specific_file(self, file_path: str) -> None:
+        if not file_path:
+            return
+
+        if not self._is_supported_audio_file(file_path):
+            self.update_status("Unsupported file type")
+            QMessageBox.warning(self, "Unsupported File", "Please drop a supported audio file.")
+            return
+
+        if not self.transcribe_file_button.isEnabled():
+            self.update_status("Busy")
+            return
+
+        dlg = BatchSizeDialog(self, default_value=16)
+        if dlg.exec() != QDialog.Accepted:
+            return
+
+        batch_size = dlg.batch_size()
+        logger.info(f"Selected file for transcription: {file_path} (batch_size={batch_size})")
+        self.controller.transcribe_file(file_path, batch_size=batch_size)
+
     @Slot()
     def _select_and_transcribe_file(self) -> None:
         extensions_filter = " ".join(f"*{ext}" for ext in SUPPORTED_AUDIO_EXTENSIONS)
@@ -419,13 +453,7 @@ class MainWindow(QMainWindow):
         if not file_path:
             return
 
-        dlg = BatchSizeDialog(self, default_value=16)
-        if dlg.exec() != QDialog.Accepted:
-            return
-
-        batch_size = dlg.batch_size()
-        logger.info(f"Selected file for transcription: {file_path} (batch_size={batch_size})")
-        self.controller.transcribe_file(file_path, batch_size=batch_size)
+        self._transcribe_specific_file(file_path)
 
     def _host_rect_global(self) -> QRect:
         top_left = self.mapToGlobal(self.rect().topLeft())
@@ -437,6 +465,8 @@ class MainWindow(QMainWindow):
         self.clipboard_window.dock_and_reset_size()
         host_rect = self._host_rect_global()
         self.clipboard_window.show_beside(host_rect, gap=10, animate=animate, side=self._clipboard_side)
+        QTimer.singleShot(0, self.clipboard_window.dock_and_reset_size)
+        QTimer.singleShot(0, lambda: self.clipboard_window.reposition_to_host(self._host_rect_global(), gap=10))
         self._save_clipboard_setting(True)
 
     def _hide_clipboard(self, animate: bool = True) -> None:
@@ -521,6 +551,38 @@ class MainWindow(QMainWindow):
             self.record_button.setText("Start Recording")
             apply_recording_button_style(self.record_button, self.is_recording)
 
+    def _extract_first_supported_drop(self, event) -> str | None:
+        md = event.mimeData()
+        if not md or not md.hasUrls():
+            return None
+
+        for url in md.urls():
+            if not url.isLocalFile():
+                continue
+            p = url.toLocalFile()
+            if p and self._is_supported_audio_file(p):
+                return p
+        return None
+
+    def eventFilter(self, obj, event):
+        et = event.type()
+        if et in (QEvent.DragEnter, QEvent.DragMove):
+            p = self._extract_first_supported_drop(event)
+            if p:
+                event.acceptProposedAction()
+                return True
+            return False
+
+        if et == QEvent.Drop:
+            p = self._extract_first_supported_drop(event)
+            if p:
+                event.acceptProposedAction()
+                self._transcribe_specific_file(p)
+                return True
+            return False
+
+        return super().eventFilter(obj, event)
+
     def moveEvent(self, event):
         super().moveEvent(event)
         if self.clipboard_window.isVisible() and self.clipboard_window.is_docked():
@@ -535,10 +597,9 @@ class MainWindow(QMainWindow):
         self._save_clipboard_setting(self._clipboard_target_visible)
         self.clipboard_window.hide()
         self.controller.stop_all_threads()
-        logger.info("Application closing")
-
+        
         if hasattr(self, "global_hotkey"):
             self.global_hotkey.stop()
-
+        
+        logger.info("Application closing")
         super().closeEvent(event)
-
