@@ -1,14 +1,12 @@
 from __future__ import annotations
 
 from typing import Optional
-import wave
 
 from PySide6.QtCore import QObject, Signal, Slot
 
 from core.audio.recording import RecordingThread
 from core.temp_file_manager import temp_file_manager
 from core.logging_config import get_logger
-from core.exceptions import AudioSaveError
 
 logger = get_logger(__name__)
 
