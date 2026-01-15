@@ -23,7 +23,6 @@ def load_model(
     device_type: str = "cpu",
     cpu_threads: Optional[int] = None,
 ) -> WhisperModel:
-
     repo = _make_repo_string(model_name, quantization_type)
     logger.info(f"Loading Whisper model {repo} on {device_type}")
 
@@ -43,26 +42,3 @@ def load_model(
 
     logger.info(f"Model {repo} ready")
     return model
-
-
-class ModelLoader:
-
-    def __init__(
-        self,
-        model_name: str,
-        quantization_type: str = "int8",
-        device_type: str = "cpu",
-        cpu_threads: Optional[int] = None,
-    ) -> None:
-        self.model_name = model_name
-        self.quantization_type = quantization_type
-        self.device_type = device_type
-        self.cpu_threads = cpu_threads
-
-    def __call__(self) -> WhisperModel:
-        return load_model(
-            self.model_name,
-            self.quantization_type,
-            self.device_type,
-            self.cpu_threads,
-        )
