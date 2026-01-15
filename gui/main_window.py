@@ -28,7 +28,7 @@ from core.controller import TranscriberController
 from core.models.metadata import ModelMetadata
 from core.hotkeys import GlobalHotkey
 from config.manager import config_manager
-from gui.styles import APP_STYLESHEET, apply_recording_button_style, apply_update_button_style, apply_clipboard_button_style
+from gui.styles import APP_STYLESHEET, update_button_property
 from gui.clipboard_window import ClipboardSideWindow
 from core.logging_config import get_logger
 
@@ -166,6 +166,7 @@ class MainWindow(QMainWindow):
         buttons_row.setSpacing(8)
 
         self.record_button = QPushButton("Start Recording")
+        self.record_button.setObjectName("recordButton")
         self.record_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.record_button.setToolTip("Click or press F9 to start recording. Click or press F9 again to stop and transcribe.")
         self.record_button.clicked.connect(self._toggle_recording)
@@ -197,9 +198,9 @@ class MainWindow(QMainWindow):
         mode_row.addStretch(1)
 
         self.clipboard_button = QPushButton("Show Clipboard")
+        self.clipboard_button.setObjectName("clipboardButton")
         self.clipboard_button.setToolTip("Show or hide the clipboard panel")
         self.clipboard_button.setMinimumWidth(130)
-        apply_clipboard_button_style(self.clipboard_button)
         self.clipboard_button.clicked.connect(self._toggle_clipboard)
         mode_row.addWidget(self.clipboard_button)
 
@@ -265,6 +266,7 @@ class MainWindow(QMainWindow):
         settings_layout.addLayout(row)
 
         self.update_model_btn = QPushButton("Update Settings")
+        self.update_model_btn.setObjectName("updateButton")
         self.update_model_btn.setToolTip("Load the selected model and settings.")
         self.update_model_btn.clicked.connect(self.update_model)
         settings_layout.addWidget(self.update_model_btn)
@@ -274,8 +276,6 @@ class MainWindow(QMainWindow):
 
         self.statusBar().showMessage("Ready")
         self.statusBar().setSizeGripEnabled(True)
-
-        apply_recording_button_style(self.record_button, False)
 
         self.resize(425, 280)
         self.setMinimumSize(425, 280)
@@ -387,10 +387,10 @@ class MainWindow(QMainWindow):
 
         if has_changes:
             self.update_model_btn.setText("Reload Model to Apply Changes")
-            apply_update_button_style(self.update_model_btn, True)
         else:
             self.update_model_btn.setText("Update Settings")
-            apply_update_button_style(self.update_model_btn, False)
+
+        update_button_property(self.update_model_btn, "changed", has_changes)
 
     @Slot(str, str, str)
     def _on_model_loaded_success(self, model_name: str, quantization_type: str, device_type: str) -> None:
@@ -414,7 +414,7 @@ class MainWindow(QMainWindow):
             self.is_recording = False
             self.record_button.setText("Start Recording")
 
-        apply_recording_button_style(self.record_button, self.is_recording)
+        update_button_property(self.record_button, "recording", self.is_recording)
 
     def _is_supported_audio_file(self, file_path: str) -> bool:
         try:
@@ -498,7 +498,7 @@ class MainWindow(QMainWindow):
         if self.is_recording:
             self.is_recording = False
             self.record_button.setText("Start Recording")
-            apply_recording_button_style(self.record_button, self.is_recording)
+            update_button_property(self.record_button, "recording", self.is_recording)
 
     @Slot()
     def update_quantization_options(self) -> None:
@@ -549,7 +549,7 @@ class MainWindow(QMainWindow):
         if not enabled and self.is_recording:
             self.is_recording = False
             self.record_button.setText("Start Recording")
-            apply_recording_button_style(self.record_button, self.is_recording)
+            update_button_property(self.record_button, "recording", self.is_recording)
 
     def _extract_first_supported_drop(self, event) -> str | None:
         md = event.mimeData()
@@ -597,9 +597,9 @@ class MainWindow(QMainWindow):
         self._save_clipboard_setting(self._clipboard_target_visible)
         self.clipboard_window.hide()
         self.controller.stop_all_threads()
-        
+
         if hasattr(self, "global_hotkey"):
             self.global_hotkey.stop()
-        
+
         logger.info("Application closing")
         super().closeEvent(event)
