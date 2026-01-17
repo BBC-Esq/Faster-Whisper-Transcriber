@@ -29,7 +29,7 @@ class ConfigManager:
         "quantization_type": "float32",
         "device_type": "cpu",
         "task_mode": "transcribe",
-        "show_clipboard_window": True,
+        "show_clipboard_window": False,
         "supported_quantizations": {"cpu": [], "cuda": []},
         "curate_transcription": True
     }
@@ -191,6 +191,7 @@ class ConfigManager:
                 ConfigManager._deep_update(base_dict[key], value)
             else:
                 base_dict[key] = value
+
 
 
 config_manager = ConfigManager()
