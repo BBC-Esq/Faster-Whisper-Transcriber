@@ -76,10 +76,12 @@ libs = [
     "psutil==7.1.3",
     "pycparser==2.23",
     # "pyinstaller==6.11.1",
+    "pynput==1.8.1",
     "pyreadline3==3.5.4",
     "PyYAML==6.0.3",
     "regex==2025.10.23",
     "requests==2.32.5",
+    "six==1.17.0",
     "sounddevice==0.5.3",
     "sympy==1.13.3",
     "tokenizers==0.22.1",
@@ -239,4 +241,5 @@ def main():
     print(f"\033[92m\nTotal installation time: {int(hours):02d}:{int(minutes):02d}:{seconds:05.2f}\033[0m")
 
 if __name__ == "__main__":
+
     main()
