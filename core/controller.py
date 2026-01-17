@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Optional
 
 from PySide6.QtCore import QObject, Signal, Slot
 from PySide6.QtWidgets import QApplication
@@ -22,25 +23,35 @@ class TranscriberController(QObject):
     model_loaded_signal = Signal(str, str, str)
     error_occurred = Signal(str, str)
 
-    def __init__(self):
+    def __init__(
+        self,
+        model_manager: Optional[ModelManager] = None,
+        audio_manager: Optional[AudioManager] = None,
+        transcription_service: Optional[TranscriptionService] = None,
+    ):
         super().__init__()
 
         samplerate, channels, dtype = get_optimal_audio_settings()
         logger.info(f"Audio settings: {samplerate} Hz, {channels} ch, {dtype}")
 
-        self.model_manager = ModelManager()
-        self.audio_manager = AudioManager(samplerate, channels, dtype)
+        self.model_manager = model_manager or ModelManager()
+        self.audio_manager = audio_manager or AudioManager(samplerate, channels, dtype)
 
         task_mode = config_manager.get_value("task_mode", "transcribe")
         curate_enabled = config_manager.get_value("curate_transcription", True)
-        self.transcription_service = TranscriptionService(
+        self.transcription_service = transcription_service or TranscriptionService(
             curate_text_enabled=curate_enabled,
             task_mode=task_mode
         )
+        self.transcription_service.set_model_version_provider(self._get_current_model_version)
 
         self._connect_signals()
         self._load_settings()
         logger.info("TranscriberController initialized")
+
+    def _get_current_model_version(self) -> str | None:
+        _, version = self.model_manager.get_model()
+        return version
 
     def set_task_mode(self, mode: str) -> None:
         self.transcription_service.set_task_mode(mode)
@@ -76,13 +87,13 @@ class TranscriberController(QObject):
         self.audio_manager.stop_recording()
 
     def transcribe_file(self, file_path: str, batch_size: int | None = None) -> None:
-        model, expected_id = self.model_manager.get_model()
-        if model and expected_id:
+        model, model_version = self.model_manager.get_model()
+        if model and model_version:
             self.enable_widgets_signal.emit(False)
             self.update_status_signal.emit(f"Transcribing {Path(file_path).name}...")
             self.transcription_service.transcribe_file(
                 model,
-                expected_id,
+                model_version,
                 file_path,
                 is_temp_file=False,
                 batch_size=batch_size,
@@ -111,11 +122,11 @@ class TranscriberController(QObject):
 
     @Slot(str)
     def _on_audio_ready(self, audio_file: str) -> None:
-        model, expected_id = self.model_manager.get_model()
-        if model and expected_id:
+        model, model_version = self.model_manager.get_model()
+        if model and model_version:
             self.transcription_service.transcribe_file(
                 model,
-                expected_id,
+                model_version,
                 audio_file,
                 is_temp_file=True,
                 batch_size=None,

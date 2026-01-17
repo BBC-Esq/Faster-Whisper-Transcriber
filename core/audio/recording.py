@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import queue
+import threading
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Iterator, Optional
@@ -38,6 +39,8 @@ class RecordingThread(QThread):
         self._audio_q: queue.Queue[bytes] = queue.Queue()
         self._overflow_count: int = 0
         self._stream_error: Optional[str] = None
+        self._stop_event = threading.Event()
+        self._cleanup_complete = threading.Event()
 
     @contextmanager
     def _audio_stream(self) -> Iterator[sd.RawInputStream]:
@@ -86,7 +89,7 @@ class RecordingThread(QThread):
                 wf.setframerate(self.samplerate)
 
                 with self._audio_stream():
-                    while not self.isInterruptionRequested():
+                    while not self._should_stop():
                         try:
                             chunk = self._audio_q.get(timeout=0.2)
                             wf.writeframes(chunk)
@@ -117,9 +120,18 @@ class RecordingThread(QThread):
         except Exception as e:
             logger.exception("Unexpected recording error")
             self.recording_error.emit(f"Recording error: {e}")
+        finally:
+            self._cleanup_complete.set()
+
+    def _should_stop(self) -> bool:
+        return self._stop_event.is_set() or self.isInterruptionRequested()
 
     def stop(self) -> None:
+        self._stop_event.set()
         self.requestInterruption()
+
+    def wait_for_cleanup(self, timeout_ms: int = 5000) -> bool:
+        return self._cleanup_complete.wait(timeout=timeout_ms / 1000.0)
 
     @staticmethod
     def _sample_width_from_dtype(dtype: str) -> int:

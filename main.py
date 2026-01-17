@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import warnings
 import sys
 import signal
@@ -52,14 +53,12 @@ def run_gui() -> None:
     _install_sigint_handler()
 
     cuda_ok = False
-    try:
+    with contextlib.suppress(ImportError):
         import torch
         cuda_ok = torch.cuda.is_available()
         logger.info(f"CUDA available: {cuda_ok}")
         if cuda_ok:
             logger.info(f"CUDA device: {torch.cuda.get_device_name(0)}")
-    except ImportError:
-        logger.info("PyTorch not available, CUDA disabled")
 
     try:
         window = MainWindow(cuda_available=cuda_ok)
@@ -70,7 +69,7 @@ def run_gui() -> None:
         temp_file_manager.cleanup_all()
         logger.info(f"Application exiting with code {exit_code}")
         sys.exit(exit_code)
-        
+
     except Exception as e:
         logger.critical(f"Failed to start application: {e}", exc_info=True)
         QMessageBox.critical(

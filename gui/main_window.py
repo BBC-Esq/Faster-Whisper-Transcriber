@@ -88,6 +88,7 @@ class MainWindow(QMainWindow):
         self.is_recording = False
         self.cuda_available = cuda_available
         self._clipboard_visible = False
+        self._toggleable_widgets: list[QWidget] = []
 
         self.clipboard_window = ClipboardSideWindow(None, width=360)
         self.clipboard_window.user_closed.connect(self._on_clipboard_closed)
@@ -160,12 +161,14 @@ class MainWindow(QMainWindow):
         self.record_button.setToolTip("Click or press F9 to toggle recording")
         self.record_button.clicked.connect(self._toggle_recording)
         buttons_row.addWidget(self.record_button, 2)
+        self._register_toggleable_widget(self.record_button)
 
         self.transcribe_file_button = QPushButton("Transcribe Audio File")
         self.transcribe_file_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.transcribe_file_button.setToolTip("Select an audio file to transcribe")
         self.transcribe_file_button.clicked.connect(self._select_and_transcribe_file)
         buttons_row.addWidget(self.transcribe_file_button, 1)
+        self._register_toggleable_widget(self.transcribe_file_button)
 
         layout.addLayout(buttons_row)
 
@@ -179,6 +182,7 @@ class MainWindow(QMainWindow):
         self.transcribe_radio = QRadioButton("Transcribe")
         self.translate_radio = QRadioButton("Translate")
         self.transcribe_radio.toggled.connect(self._on_task_mode_changed)
+        self._register_toggleable_widget(self.transcribe_radio)
 
         mode_row.addWidget(self.transcribe_radio)
         mode_row.addWidget(self.translate_radio)
@@ -190,6 +194,7 @@ class MainWindow(QMainWindow):
         self.clipboard_button.setMinimumWidth(130)
         self.clipboard_button.clicked.connect(self._toggle_clipboard)
         mode_row.addWidget(self.clipboard_button)
+        self._register_toggleable_widget(self.clipboard_button)
 
         layout.addLayout(mode_row)
         return group
@@ -203,6 +208,7 @@ class MainWindow(QMainWindow):
         self.model_dropdown = QComboBox()
         self.model_dropdown.addItems(ModelMetadata.get_all_model_names())
         self.model_dropdown.setToolTip("Choose a Whisper model")
+        self._register_toggleable_widget(self.model_dropdown)
 
         self.loaded_model_label = QLabel("Not loaded")
         self.loaded_model_label.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
@@ -224,13 +230,16 @@ class MainWindow(QMainWindow):
         self.device_dropdown = QComboBox()
         self.device_dropdown.addItems(["cpu", "cuda"] if self.cuda_available else ["cpu"])
         self.device_dropdown.setToolTip("Choose the compute device")
+        self._register_toggleable_widget(self.device_dropdown)
 
         self.quantization_dropdown = QComboBox()
         self.quantization_dropdown.setToolTip("Choose the compute type (quantization)")
+        self._register_toggleable_widget(self.quantization_dropdown)
 
         self.append_checkbox = QCheckBox("Append")
         self.append_checkbox.setToolTip("Append new transcriptions instead of replacing")
         self.append_checkbox.toggled.connect(self._on_append_toggled)
+        self._register_toggleable_widget(self.append_checkbox)
 
         row = QHBoxLayout()
         row.setSpacing(10)
@@ -251,6 +260,7 @@ class MainWindow(QMainWindow):
         self.update_model_btn.setToolTip("Load the selected model and settings")
         self.update_model_btn.clicked.connect(self._update_model)
         layout.addWidget(self.update_model_btn)
+        self._register_toggleable_widget(self.update_model_btn)
 
         return group
 
@@ -409,6 +419,9 @@ class MainWindow(QMainWindow):
     def _update_clipboard_button_text(self) -> None:
         self.clipboard_button.setText("Hide Clipboard" if self._clipboard_visible else "Show Clipboard")
 
+    def _register_toggleable_widget(self, widget: QWidget) -> None:
+        self._toggleable_widgets.append(widget)
+
     @Slot(str)
     def _on_transcription_ready(self, text: str) -> None:
         self.clipboard_window.add_transcription(text)
@@ -448,13 +461,8 @@ class MainWindow(QMainWindow):
 
     @Slot(bool)
     def set_widgets_enabled(self, enabled: bool) -> None:
-        widgets = [
-            self.record_button, self.transcribe_file_button, self.clipboard_button,
-            self.model_dropdown, self.quantization_dropdown, self.device_dropdown,
-            self.update_model_btn, self.transcribe_radio, self.append_checkbox,
-        ]
-        for w in widgets:
-            w.setEnabled(enabled)
+        for widget in self._toggleable_widgets:
+            widget.setEnabled(enabled)
 
         self.translate_radio.setEnabled(enabled and ModelMetadata.supports_translation(self.model_dropdown.currentText()))
 
@@ -484,19 +492,19 @@ class MainWindow(QMainWindow):
                 return True
         return super().eventFilter(obj, event)
 
-    def moveEvent(self, event):
-        super().moveEvent(event)
+    def _sync_clipboard_position(self) -> None:
         host_rect = self._host_rect_global()
         self.clipboard_window.update_host_rect(host_rect)
         if self.clipboard_window.isVisible() and self.clipboard_window.is_docked():
             self.clipboard_window.reposition_to_host(host_rect, gap=10)
 
+    def moveEvent(self, event):
+        super().moveEvent(event)
+        self._sync_clipboard_position()
+
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        host_rect = self._host_rect_global()
-        self.clipboard_window.update_host_rect(host_rect)
-        if self.clipboard_window.isVisible() and self.clipboard_window.is_docked():
-            self.clipboard_window.reposition_to_host(host_rect, gap=10)
+        self._sync_clipboard_position()
 
     def closeEvent(self, event):
         self._save_config("show_clipboard_window", self._clipboard_visible)

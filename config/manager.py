@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import copy
 from pathlib import Path
-from typing import Any, Dict, Optional, List, Set
+from typing import Any
 
 import yaml
 
@@ -47,14 +47,14 @@ class ConfigManager:
 
     def __init__(self):
         self._config_path = Path(get_resource_path("config.yaml"))
-        self._config_cache: Optional[Dict[str, Any]] = None
+        self._config_cache: dict[str, Any] | None = None
 
     @property
     def config_path(self) -> Path:
         return self._config_path
 
     @staticmethod
-    def _get_valid_model_names() -> Set[str]:
+    def _get_valid_model_names() -> set[str]:
         try:
             from core.models.metadata import ModelMetadata
             return set(ModelMetadata.get_all_model_names())
@@ -68,12 +68,12 @@ class ConfigManager:
             return self.DEFAULT_CONFIG["model_name"]
         return value
 
-    def load_config(self) -> Dict[str, Any]:
+    def load_config(self) -> dict[str, Any]:
         if self._config_cache is None:
             self._config_cache = self._load_from_file()
         return copy.deepcopy(self._config_cache)
 
-    def _load_from_file(self) -> Dict[str, Any]:
+    def _load_from_file(self) -> dict[str, Any]:
         loaded_config = {}
 
         try:
@@ -95,7 +95,7 @@ class ConfigManager:
 
         return merged_config
 
-    def _validate_and_sanitize(self, config: Dict[str, Any]) -> None:
+    def _validate_and_sanitize(self, config: dict[str, Any]) -> None:
         for key, schema in self.VALIDATION_SCHEMA.items():
             value = config.get(key)
             default = self.DEFAULT_CONFIG[key]
@@ -121,7 +121,7 @@ class ConfigManager:
 
         self._validate_supported_quantizations(config)
 
-    def _validate_supported_quantizations(self, config: Dict[str, Any]) -> None:
+    def _validate_supported_quantizations(self, config: dict[str, Any]) -> None:
         key = "supported_quantizations"
         if not isinstance(config[key], dict):
             config[key] = copy.deepcopy(self.DEFAULT_CONFIG[key])
@@ -136,7 +136,7 @@ class ConfigManager:
                     if isinstance(q, str) and q in self.VALID_OPTIONS["quantization_types"]
                 ]
 
-    def save_config(self, config: Dict[str, Any]) -> None:
+    def save_config(self, config: dict[str, Any]) -> None:
         try:
             self._config_path.parent.mkdir(parents=True, exist_ok=True)
             validated_config = copy.deepcopy(config)
@@ -151,7 +151,7 @@ class ConfigManager:
             logger.error(f"Failed to save configuration: {e}")
             raise ConfigurationError(f"Failed to save configuration: {e}") from e
 
-    def update_config(self, updates: Dict[str, Any]) -> None:
+    def update_config(self, updates: dict[str, Any]) -> None:
         config = self.load_config()
         self._deep_update(config, updates)
         self.save_config(config)
@@ -162,7 +162,7 @@ class ConfigManager:
     def set_value(self, key: str, value: Any) -> None:
         self.update_config({key: value})
 
-    def get_model_settings(self) -> Dict[str, str]:
+    def get_model_settings(self) -> dict[str, str]:
         config = self.load_config()
         return {k: config[k] for k in ["model_name", "quantization_type", "device_type"]}
 
@@ -173,10 +173,10 @@ class ConfigManager:
             "device_type": device_type
         })
 
-    def get_supported_quantizations(self) -> Dict[str, List[str]]:
+    def get_supported_quantizations(self) -> dict[str, list[str]]:
         return self.get_value("supported_quantizations", {"cpu": [], "cuda": []})
 
-    def set_supported_quantizations(self, device: str, quantizations: List[str]) -> None:
+    def set_supported_quantizations(self, device: str, quantizations: list[str]) -> None:
         if device not in self.VALID_OPTIONS["device_types"]:
             return
         current = self.get_supported_quantizations()
@@ -187,7 +187,7 @@ class ConfigManager:
         self._config_cache = None
 
     @staticmethod
-    def _deep_update(base_dict: Dict[str, Any], update_dict: Dict[str, Any]) -> None:
+    def _deep_update(base_dict: dict[str, Any], update_dict: dict[str, Any]) -> None:
         for key, value in update_dict.items():
             if key in base_dict and isinstance(base_dict[key], dict) and isinstance(value, dict):
                 ConfigManager._deep_update(base_dict[key], value)

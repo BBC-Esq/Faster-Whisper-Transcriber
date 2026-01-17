@@ -76,13 +76,18 @@ class AudioManager(QObject):
     def cleanup(self) -> None:
         if self._recording_thread and self._recording_thread.isRunning():
             self._recording_thread.stop()
-            self._recording_thread.wait(5000)
+
+            if not self._recording_thread.wait_for_cleanup(timeout_ms=3000):
+                logger.warning("Recording thread cleanup taking longer than expected, waiting...")
+                self._recording_thread.wait(2000)
+
             if self._recording_thread.isRunning():
-                logger.warning("Recording thread did not stop in time")
+                logger.error("Recording thread did not stop gracefully, forcing termination")
                 self._recording_thread.terminate()
-        
+                self._recording_thread.wait(1000)
+
         if self._current_temp_file:
             temp_file_manager.release(self._current_temp_file)
             self._current_temp_file = None
-        
+
         logger.debug("AudioManager cleanup complete")

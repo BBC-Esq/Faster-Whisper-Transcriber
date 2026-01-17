@@ -20,25 +20,27 @@ class _TranscriptionRunnable(QRunnable):
     def __init__(
         self,
         model,
-        expected_id: int,
+        model_version: str,
         audio_file: str | Path,
         task_mode: str = "transcribe",
         is_temp_file: bool = True,
         batch_size: int | None = None,
+        get_current_version_func=None,
     ) -> None:
         super().__init__()
         self.setAutoDelete(True)
         self.model = model
-        self.expected_id = expected_id
+        self.model_version = model_version
         self.audio_file = Path(audio_file)
         self.task_mode = task_mode
         self.is_temp_file = is_temp_file
         self.batch_size = batch_size
+        self.get_current_version = get_current_version_func
         self.signals = _TranscriberSignals()
 
     def run(self) -> None:
         try:
-            if id(self.model) != self.expected_id:
+            if self.get_current_version and self.get_current_version() != self.model_version:
                 logger.warning("Model changed during transcription setup")
                 return
 
@@ -98,11 +100,15 @@ class TranscriptionService(QObject):
         self.curate_enabled = curate_text_enabled
         self.task_mode = task_mode
         self._thread_pool = QThreadPool.globalInstance()
+        self._get_model_version_func = None
+
+    def set_model_version_provider(self, func) -> None:
+        self._get_model_version_func = func
 
     def transcribe_file(
         self,
         model,
-        expected_id: int,
+        model_version: str,
         audio_file: str | Path,
         is_temp_file: bool = True,
         batch_size: int | None = None,
@@ -118,11 +124,12 @@ class TranscriptionService(QObject):
         try:
             runnable = _TranscriptionRunnable(
                 model=model,
-                expected_id=expected_id,
+                model_version=model_version,
                 audio_file=str(audio_file),
                 task_mode=self.task_mode,
                 is_temp_file=is_temp_file,
                 batch_size=batch_size,
+                get_current_version_func=self._get_model_version_func,
             )
             runnable.signals.transcription_done.connect(self._on_transcription_done)
             runnable.signals.progress_updated.connect(self._on_progress_updated)
