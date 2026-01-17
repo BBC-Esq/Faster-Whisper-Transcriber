@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Qt, Slot, QRect, QEasingCurve, QPropertyAnimation, Signal
+from PySide6.QtCore import Qt, Slot, QRect, QEasingCurve, QPropertyAnimation, Signal, QPoint, QTimer
 from PySide6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QPushButton, QTextEdit, QApplication
+from PySide6.QtGui import QMoveEvent
 
 from core.logging_config import get_logger
 
@@ -9,7 +10,6 @@ logger = get_logger(__name__)
 
 
 class ClipboardPanel(QWidget):
-    switch_side_requested = Signal()
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
@@ -38,16 +38,7 @@ class ClipboardPanel(QWidget):
 
         actions.addStretch(1)
 
-        self.switch_side_button = QPushButton("←")
-        self.switch_side_button.setToolTip("Move clipboard to the other side")
-        self.switch_side_button.setFixedWidth(36)
-        self.switch_side_button.clicked.connect(self._request_switch_side)
-        actions.addWidget(self.switch_side_button)
-
         layout.addLayout(actions)
-
-    def set_side(self, side: str) -> None:
-        self.switch_side_button.setText("←" if side == "right" else "→")
 
     def update_text(self, text: str) -> None:
         self.text_display.setPlainText(text)
@@ -72,14 +63,10 @@ class ClipboardPanel(QWidget):
         except Exception as e:
             logger.warning(f"ClipboardPanel failed to copy: {e}")
 
-    @Slot()
-    def _request_switch_side(self) -> None:
-        self.switch_side_requested.emit()
-
 
 class ClipboardSideWindow(QWidget):
-    switch_side_requested = Signal()
     user_closed = Signal()
+    docked_changed = Signal(bool)
 
     def __init__(self, parent: QWidget | None = None, width: int = 360):
         super().__init__(parent)
@@ -92,32 +79,51 @@ class ClipboardSideWindow(QWidget):
         )
 
         self._panel = ClipboardPanel(self)
-        self._panel.switch_side_requested.connect(self.switch_side_requested)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
+
         layout.addWidget(self._panel)
+
+        self._bottom_bar = QHBoxLayout()
+        self._bottom_bar.setContentsMargins(12, 0, 12, 12)
+        self._bottom_bar.setSpacing(10)
+
+        self._bottom_bar.addStretch(1)
+
+        self._dock_button = QPushButton("Dock")
+        self._dock_button.setToolTip("Re-attach to main window")
+        self._dock_button.setFixedWidth(60)
+        self._dock_button.clicked.connect(self._request_dock)
+        self._dock_button.hide()
+        self._bottom_bar.addWidget(self._dock_button)
+
+        layout.addLayout(self._bottom_bar)
 
         self._desired_width = width
         self._default_height = 280
 
         self._animation: QPropertyAnimation | None = None
         self._side: str = "right"
-        self._panel.set_side(self._side)
 
         self._docked = True
-        self._internal_geometry_change = False
+        self._internal_move = False
+        self._last_host_rect: QRect | None = None
+        self._drag_start_pos: QPoint | None = None
 
-        self.setMinimumSize(285, 260)
+        self.setMinimumSize(285, 200)
         self.resize(self._desired_width, self._default_height)
         self.hide()
 
     def is_docked(self) -> bool:
         return self._docked
 
-    def dock_and_reset_size(self) -> None:
-        self._docked = True
-        self.resize(self._desired_width, self._default_height)
+    def set_docked(self, docked: bool) -> None:
+        if self._docked == docked:
+            return
+        self._docked = docked
+        self._dock_button.setVisible(not docked)
+        self.docked_changed.emit(docked)
 
     def update_text(self, text: str) -> None:
         self._panel.update_text(text)
@@ -132,53 +138,48 @@ class ClipboardSideWindow(QWidget):
         return self._side
 
     def set_side(self, side: str) -> None:
-        side = "left" if side == "left" else "right"
-        self._side = side
-        self._panel.set_side(side)
+        self._side = "left" if side == "left" else "right"
 
     def _stop_animation(self) -> None:
         if self._animation:
             self._animation.stop()
             self._animation = None
 
-    def _compute_rects(self, host_rect: QRect, gap: int, side: str, w: int, h: int) -> tuple[QRect, QRect]:
+    def _compute_docked_rect(self, host_rect: QRect, gap: int, w: int, h: int) -> QRect:
         h = max(self.minimumHeight(), h)
         w = max(self.minimumWidth(), w)
 
-        if side == "left":
-            end_x = host_rect.left() - gap - w
-            end_rect = QRect(end_x, host_rect.top(), w, h)
-            start_rect = QRect(end_rect.left() - 24, end_rect.top(), end_rect.width(), end_rect.height())
+        if self._side == "left":
+            x = host_rect.left() - gap - w
         else:
-            end_x = host_rect.right() + gap
-            end_rect = QRect(end_x, host_rect.top(), w, h)
-            start_rect = QRect(end_rect.left() + 24, end_rect.top(), end_rect.width(), end_rect.height())
+            x = host_rect.right() + gap
 
-        return start_rect, end_rect
+        return QRect(x, host_rect.top(), w, h)
 
-    def show_beside(self, host_rect: QRect, gap: int = 10, animate: bool = True, side: str | None = None) -> None:
+    def show_docked(self, host_rect: QRect, gap: int = 10, animate: bool = True) -> None:
         self._stop_animation()
+        self._last_host_rect = host_rect
 
-        if side is not None:
-            self.set_side(side)
+        w = self._desired_width
+        h = max(host_rect.height(), self._default_height, self.minimumHeight())
+        end_rect = self._compute_docked_rect(host_rect, gap, w, h)
 
-        w = self.width()
-        h = max(host_rect.height(), self.height(), self.minimumHeight())
-        start_rect, end_rect = self._compute_rects(host_rect, gap, self._side, w, h)
+        if self._side == "left":
+            start_rect = QRect(end_rect.left() - 30, end_rect.top(), end_rect.width(), end_rect.height())
+        else:
+            start_rect = QRect(end_rect.left() + 30, end_rect.top(), end_rect.width(), end_rect.height())
 
-        self._internal_geometry_change = True
-        try:
-            self.setGeometry(start_rect)
-            self.show()
-        finally:
-            self._internal_geometry_change = False
+        self._internal_move = True
+        self.setGeometry(start_rect)
+        self.show()
+        self._internal_move = False
+
+        self.set_docked(True)
 
         if not animate:
-            self._internal_geometry_change = True
-            try:
-                self.setGeometry(end_rect)
-            finally:
-                self._internal_geometry_change = False
+            self._internal_move = True
+            self.setGeometry(end_rect)
+            self._internal_move = False
             return
 
         anim = QPropertyAnimation(self, b"geometry", self)
@@ -188,32 +189,29 @@ class ClipboardSideWindow(QWidget):
         anim.setEndValue(end_rect)
         self._animation = anim
 
-        def _done():
-            self._internal_geometry_change = False
+        def on_finished():
+            self._internal_move = False
 
-        self._internal_geometry_change = True
-        anim.finished.connect(_done)
+        self._internal_move = True
+        anim.finished.connect(on_finished)
         anim.start()
 
-    def hide_away(self, host_rect: QRect, gap: int = 10, animate: bool = True) -> None:
+    def hide_animated(self, host_rect: QRect, gap: int = 10, animate: bool = True) -> None:
         self._stop_animation()
 
         if not self.isVisible():
             return
 
-        current = self.geometry()
-        w = current.width()
-        h = current.height()
-        _, end_rect = self._compute_rects(host_rect, gap, self._side, w, h)
-
-        if self._side == "left":
-            end_rect = QRect(end_rect.left() - 24, end_rect.top(), end_rect.width(), end_rect.height())
-        else:
-            end_rect = QRect(end_rect.left() + 24, end_rect.top(), end_rect.width(), end_rect.height())
-
         if not animate:
             self.hide()
             return
+
+        current = self.geometry()
+
+        if self._side == "left":
+            end_rect = QRect(current.left() - 30, current.top(), current.width(), current.height())
+        else:
+            end_rect = QRect(current.left() + 30, current.top(), current.width(), current.height())
 
         anim = QPropertyAnimation(self, b"geometry", self)
         anim.setDuration(160)
@@ -223,11 +221,8 @@ class ClipboardSideWindow(QWidget):
         anim.finished.connect(self.hide)
         self._animation = anim
 
-        def _done():
-            self._internal_geometry_change = False
-
-        self._internal_geometry_change = True
-        anim.finished.connect(_done)
+        self._internal_move = True
+        anim.finished.connect(lambda: setattr(self, '_internal_move', False))
         anim.start()
 
     def reposition_to_host(self, host_rect: QRect, gap: int = 10) -> None:
@@ -235,70 +230,68 @@ class ClipboardSideWindow(QWidget):
             return
 
         self._stop_animation()
+        self._last_host_rect = host_rect
+
         current = self.geometry()
         w = current.width()
         h = max(host_rect.height(), current.height(), self.minimumHeight())
-        _, end_rect = self._compute_rects(host_rect, gap, self._side, w, h)
+        new_rect = self._compute_docked_rect(host_rect, gap, w, h)
 
-        self._internal_geometry_change = True
-        try:
-            self.setGeometry(end_rect)
-        finally:
-            self._internal_geometry_change = False
+        self._internal_move = True
+        self.setGeometry(new_rect)
+        self._internal_move = False
 
-    def move_to_side(self, host_rect: QRect, new_side: str, gap: int = 10, animate: bool = True) -> None:
-        new_side = "left" if new_side == "left" else "right"
-        self.set_side(new_side)
-
-        if not self.isVisible():
-            return
-
-        self._docked = True
-        self._internal_geometry_change = True
-        try:
-            self.resize(self._desired_width, self._default_height)
-        finally:
-            self._internal_geometry_change = False
-
+    def dock_to_host(self, host_rect: QRect, gap: int = 10, animate: bool = True) -> None:
         self._stop_animation()
-        current = self.geometry()
-        w = self.width()
-        h = max(host_rect.height(), self.height(), self.minimumHeight())
-        _, end_rect = self._compute_rects(host_rect, gap, self._side, w, h)
+        self._last_host_rect = host_rect
 
-        if not animate:
-            self._internal_geometry_change = True
-            try:
-                self.setGeometry(end_rect)
-            finally:
-                self._internal_geometry_change = False
+        w = self._desired_width
+        h = max(host_rect.height(), self._default_height, self.minimumHeight())
+        end_rect = self._compute_docked_rect(host_rect, gap, w, h)
+
+        self.set_docked(True)
+
+        if not animate or not self.isVisible():
+            self._internal_move = True
+            self.setGeometry(end_rect)
+            self.resize(self._desired_width, h)
+            self._internal_move = False
+            if not self.isVisible():
+                self.show()
             return
+
+        current = self.geometry()
 
         anim = QPropertyAnimation(self, b"geometry", self)
-        anim.setDuration(220)
+        anim.setDuration(200)
         anim.setEasingCurve(QEasingCurve.OutCubic)
         anim.setStartValue(current)
         anim.setEndValue(end_rect)
         self._animation = anim
 
-        def _done():
-            self._internal_geometry_change = False
+        def on_finished():
+            self._internal_move = False
 
-        self._internal_geometry_change = True
-        anim.finished.connect(_done)
+        self._internal_move = True
+        anim.finished.connect(on_finished)
         anim.start()
+
+    def moveEvent(self, event: QMoveEvent) -> None:
+        super().moveEvent(event)
+
+        if self._internal_move:
+            return
+
+        if self._docked and self.isVisible():
+            self.set_docked(False)
+            logger.debug("Clipboard window detached by user drag")
 
     def closeEvent(self, event):
         self.user_closed.emit()
         event.ignore()
         self.hide()
 
-    def moveEvent(self, event):
-        super().moveEvent(event)
-        if self.isVisible() and not self._internal_geometry_change and event.spontaneous():
-            self._docked = False
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        if self.isVisible() and not self._internal_geometry_change and event.spontaneous():
-            self._docked = False
+    @Slot()
+    def _request_dock(self) -> None:
+        if self._last_host_rect:
+            self.dock_to_host(self._last_host_rect, gap=10, animate=True)

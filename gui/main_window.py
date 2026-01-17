@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Slot, QRect, QEvent, QTimer, Signal
+from PySide6.QtCore import Qt, Slot, QRect, QEvent, Signal
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -107,12 +107,11 @@ class MainWindow(QMainWindow):
         self.is_recording = False
         self.cuda_available = cuda_available
 
-        self.clipboard_window = ClipboardSideWindow(self, width=360)
-        self.clipboard_window.switch_side_requested.connect(self._switch_clipboard_side)
+        self.clipboard_window = ClipboardSideWindow(None, width=360)
         self.clipboard_window.user_closed.connect(self._on_clipboard_closed)
+        self.clipboard_window.docked_changed.connect(self._on_clipboard_docked_changed)
 
-        self._clipboard_target_visible = False
-        self._clipboard_side = "right"
+        self._clipboard_visible = False
 
         self._build_ui()
 
@@ -281,11 +280,19 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(425, 280)
         self.setWindowFlag(Qt.WindowStaysOnTopHint)
 
+    def _host_rect_global(self) -> QRect:
+        top_left = self.mapToGlobal(self.rect().topLeft())
+        return QRect(top_left.x(), top_left.y(), self.width(), self.height())
+
     @Slot()
     def _on_clipboard_closed(self) -> None:
-        self._clipboard_target_visible = False
+        self._clipboard_visible = False
         self._update_clipboard_button_text()
         self._save_clipboard_setting(False)
+
+    @Slot(bool)
+    def _on_clipboard_docked_changed(self, docked: bool) -> None:
+        logger.debug(f"Clipboard docked state changed: {docked}")
 
     def _load_config(self) -> None:
         try:
@@ -317,12 +324,11 @@ class MainWindow(QMainWindow):
 
             self._update_translation_availability(self.model_dropdown.currentText())
 
-            self._clipboard_target_visible = bool(show_clipboard)
-            if self._clipboard_target_visible:
-                self._show_clipboard(animate=False)
-            else:
-                self.clipboard_window.hide()
-                self._update_clipboard_button_text()
+            self._clipboard_visible = bool(show_clipboard)
+            if self._clipboard_visible:
+                self.clipboard_window.show_docked(self._host_rect_global(), gap=10, animate=False)
+            self._update_clipboard_button_text()
+
         except Exception as e:
             logger.error(f"Failed to load config: {e}")
 
@@ -455,43 +461,35 @@ class MainWindow(QMainWindow):
 
         self._transcribe_specific_file(file_path)
 
-    def _host_rect_global(self) -> QRect:
-        top_left = self.mapToGlobal(self.rect().topLeft())
-        return QRect(top_left.x(), top_left.y(), self.width(), self.height())
+    @Slot()
+    def _toggle_clipboard(self) -> None:
+        if self._clipboard_visible:
+            self._hide_clipboard()
+        else:
+            self._show_clipboard()
 
     def _show_clipboard(self, animate: bool = True) -> None:
-        self._clipboard_target_visible = True
+        self._clipboard_visible = True
         self._update_clipboard_button_text()
-        self.clipboard_window.dock_and_reset_size()
         host_rect = self._host_rect_global()
-        self.clipboard_window.show_beside(host_rect, gap=10, animate=animate, side=self._clipboard_side)
-        QTimer.singleShot(0, self.clipboard_window.dock_and_reset_size)
-        QTimer.singleShot(0, lambda: self.clipboard_window.reposition_to_host(self._host_rect_global(), gap=10))
+
+        if self.clipboard_window.is_docked():
+            self.clipboard_window.show_docked(host_rect, gap=10, animate=animate)
+        else:
+            self.clipboard_window.show()
+            self.clipboard_window.raise_()
+
         self._save_clipboard_setting(True)
 
     def _hide_clipboard(self, animate: bool = True) -> None:
-        self._clipboard_target_visible = False
+        self._clipboard_visible = False
         self._update_clipboard_button_text()
         host_rect = self._host_rect_global()
-        self.clipboard_window.hide_away(host_rect, gap=10, animate=animate)
+        self.clipboard_window.hide_animated(host_rect, gap=10, animate=animate)
         self._save_clipboard_setting(False)
 
-    @Slot()
-    def _toggle_clipboard(self) -> None:
-        if self._clipboard_target_visible:
-            self._hide_clipboard(animate=True)
-        else:
-            self._show_clipboard(animate=True)
-
-    @Slot()
-    def _switch_clipboard_side(self) -> None:
-        self._clipboard_side = "left" if self._clipboard_side == "right" else "right"
-        self.clipboard_window.set_side(self._clipboard_side)
-        if self.clipboard_window.isVisible() and self.clipboard_window.is_docked():
-            self.clipboard_window.move_to_side(self._host_rect_global(), self._clipboard_side, gap=10, animate=True)
-
     def _update_clipboard_button_text(self) -> None:
-        self.clipboard_button.setText("Hide Clipboard" if self._clipboard_target_visible else "Show Clipboard")
+        self.clipboard_button.setText("Hide Clipboard" if self._clipboard_visible else "Show Clipboard")
 
     def update_clipboard(self, text: str) -> None:
         self.clipboard_window.update_text(text)
@@ -594,8 +592,9 @@ class MainWindow(QMainWindow):
             self.clipboard_window.reposition_to_host(self._host_rect_global(), gap=10)
 
     def closeEvent(self, event):
-        self._save_clipboard_setting(self._clipboard_target_visible)
+        self._save_clipboard_setting(self._clipboard_visible)
         self.clipboard_window.hide()
+        self.clipboard_window.close()
         self.controller.stop_all_threads()
 
         if hasattr(self, "global_hotkey"):
