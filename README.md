@@ -6,11 +6,9 @@
 
 ## ✨ Features
 
-- 🎤 **Record & Transcribe** — Capture audio directly from your microphone
-- 📁 **File Transcription** — Transcribe existing audio files
-- 🌍 **Translation** — Translate foreign language audio to English
-- 📋 **Auto-Clipboard** — Transcriptions are automatically copied and ready to paste
-- ⚡ **GPU Accelerated** — CUDA support for fast transcription
+- 🎤 **Record & Transcribe**
+- 📁 **Transcribe Files**
+- ⚡ **GPU Accelerated**
 
 ## 📋 Compatibility
 - Compatible with [Python 3.11](https://www.python.org/downloads/release/python-3119/), [3.12](https://www.python.org/downloads/release/python-31210/) or [3.13](https://www.python.org/downloads/release/python-31311/)
