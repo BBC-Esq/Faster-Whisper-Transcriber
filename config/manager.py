@@ -31,7 +31,8 @@ class ConfigManager:
         "task_mode": "transcribe",
         "show_clipboard_window": False,
         "supported_quantizations": {"cpu": [], "cuda": []},
-        "curate_transcription": True
+        "curate_transcription": True,
+        "clipboard_append_mode": False,
     }
 
     VALIDATION_SCHEMA = {
@@ -41,6 +42,7 @@ class ConfigManager:
         "task_mode": {"type": str, "options": "task_modes", "lowercase": True},
         "show_clipboard_window": {"type": bool},
         "curate_transcription": {"type": bool},
+        "clipboard_append_mode": {"type": bool},
     }
 
     def __init__(self):
@@ -191,7 +193,6 @@ class ConfigManager:
                 ConfigManager._deep_update(base_dict[key], value)
             else:
                 base_dict[key] = value
-
 
 
 config_manager = ConfigManager()
