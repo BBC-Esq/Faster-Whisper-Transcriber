@@ -93,6 +93,16 @@ libs = [
 
 start_time = time.time()
 
+def enable_ansi_colors():
+    if sys.platform == "win32":
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        stdout_handle = kernel32.GetStdHandle(-11)
+        mode = ctypes.c_ulong()
+        kernel32.GetConsoleMode(stdout_handle, ctypes.byref(mode))
+        mode.value |= 0x0004
+        kernel32.SetConsoleMode(stdout_handle, mode)
+
 def has_nvidia_gpu():
     try:
         result = subprocess.run(
@@ -179,6 +189,8 @@ def install_libraries_with_retry(libraries, with_deps=False, max_retries=5, dela
     return failed_installations, multiple_attempts
 
 def main():
+    enable_ansi_colors()
+
     if not check_python_version_and_confirm():
         sys.exit(1)
 
