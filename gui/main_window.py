@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
     QSpinBox,
+    QCheckBox,
 )
 
 from core.quantization import CheckQuantizationSupport
@@ -34,20 +35,10 @@ from core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-SUPPORTED_AUDIO_EXTENSIONS = [
-    ".aac",
-    ".amr",
-    ".asf",
-    ".avi",
-    ".flac",
-    ".m4a",
-    ".mkv",
-    ".mp3",
-    ".mp4",
-    ".wav",
-    ".webm",
-    ".wma",
-]
+SUPPORTED_AUDIO_EXTENSIONS = {
+    ".aac", ".amr", ".asf", ".avi", ".flac", ".m4a",
+    ".mkv", ".mp3", ".mp4", ".wav", ".webm", ".wma",
+}
 
 
 class BatchSizeDialog(QDialog):
@@ -55,37 +46,30 @@ class BatchSizeDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Batch Size")
         self.setModal(True)
+        self.setFixedWidth(360)
 
-        root = QVBoxLayout(self)
-        root.setContentsMargins(14, 14, 14, 14)
-        root.setSpacing(10)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
 
-        label = QLabel("Set batch size for file transcription.\nUse 1 for non-batched transcription.")
-        label.setWordWrap(True)
-        root.addWidget(label)
+        layout.addWidget(QLabel("Set batch size for file transcription.\nUse 1 for non-batched transcription."))
 
         row = QHBoxLayout()
         row.setSpacing(10)
-
-        batch_label = QLabel("Batch size")
+        row.addWidget(QLabel("Batch size"))
         self.spin = QSpinBox()
         self.spin.setRange(1, 256)
         self.spin.setValue(max(1, int(default_value)))
-        self.spin.setSingleStep(1)
-
-        row.addWidget(batch_label)
         row.addWidget(self.spin, 1)
-        root.addLayout(row)
+        layout.addLayout(row)
 
         buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
-        root.addWidget(buttons)
-
-        self.setFixedWidth(360)
+        layout.addWidget(buttons)
 
     def batch_size(self) -> int:
-        return int(self.spin.value())
+        return self.spin.value()
 
 
 class MainWindow(QMainWindow):
@@ -97,56 +81,51 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Faster Whisper Transcriber")
         self.setStyleSheet(APP_STYLESHEET)
 
-        config_settings = config_manager.get_model_settings()
-        self.loaded_model_settings = config_settings.copy()
-
+        self.loaded_model_settings = config_manager.get_model_settings()
         self.task_mode = config_manager.get_value("task_mode", "transcribe")
-
         self.controller = TranscriberController()
         self.supported_quantizations: dict[str, list[str]] = {"cpu": [], "cuda": []}
         self.is_recording = False
         self.cuda_available = cuda_available
+        self._clipboard_visible = False
 
         self.clipboard_window = ClipboardSideWindow(None, width=360)
         self.clipboard_window.user_closed.connect(self._on_clipboard_closed)
-        self.clipboard_window.docked_changed.connect(self._on_clipboard_docked_changed)
-
-        self._clipboard_visible = False
+        self.clipboard_window.docked_changed.connect(lambda d: logger.debug(f"Clipboard docked: {d}"))
+        self.clipboard_window.always_on_top_changed.connect(lambda v: self._save_config("clipboard_always_on_top", v))
 
         self._build_ui()
+        self._setup_connections()
+        self._load_config()
+
+        if not self.supported_quantizations.get("cpu") or (cuda_available and not self.supported_quantizations.get("cuda")):
+            CheckQuantizationSupport().update_supported_quantizations()
+            self._load_config()
+
+        self.update_quantization_options()
 
         self.hotkey_toggle_recording.connect(self._toggle_recording, Qt.QueuedConnection)
         self.global_hotkey = GlobalHotkey(lambda: self.hotkey_toggle_recording.emit())
         self.global_hotkey.start()
 
-        self._load_config()
+        self.setAcceptDrops(True)
+        if app := QApplication.instance():
+            app.installEventFilter(self)
 
-        if not self.supported_quantizations.get("cpu") or (self.cuda_available and not self.supported_quantizations.get("cuda")):
-            quantization_checker = CheckQuantizationSupport()
-            quantization_checker.update_supported_quantizations()
-            self._load_config()
+        logger.info("MainWindow initialized")
 
+    def _setup_connections(self) -> None:
         self.device_dropdown.currentTextChanged.connect(self.update_quantization_options)
         self.model_dropdown.currentTextChanged.connect(self.update_quantization_options)
-
         self.model_dropdown.currentTextChanged.connect(self._on_dropdown_changed)
         self.quantization_dropdown.currentTextChanged.connect(self._on_dropdown_changed)
         self.device_dropdown.currentTextChanged.connect(self._on_dropdown_changed)
 
-        self.update_quantization_options()
-
-        self.controller.update_status_signal.connect(self.update_status)
+        self.controller.update_status_signal.connect(self.statusBar().showMessage)
         self.controller.enable_widgets_signal.connect(self.set_widgets_enabled)
-        self.controller.text_ready_signal.connect(self.update_clipboard)
+        self.controller.text_ready_signal.connect(self._on_transcription_ready)
         self.controller.model_loaded_signal.connect(self._on_model_loaded_success)
         self.controller.error_occurred.connect(self._show_error_dialog)
-
-        self.setAcceptDrops(True)
-        app = QApplication.instance()
-        if app:
-            app.installEventFilter(self)
-
-        logger.info("MainWindow initialized")
 
     def _build_ui(self) -> None:
         central = QWidget(self)
@@ -156,10 +135,21 @@ class MainWindow(QMainWindow):
         root.setContentsMargins(5, 5, 5, 5)
         root.setSpacing(8)
 
-        actions_group = QGroupBox("")
-        actions_layout = QVBoxLayout()
-        actions_layout.setContentsMargins(2, 2, 2, 2)
-        actions_layout.setSpacing(8)
+        root.addWidget(self._build_actions_group())
+        root.addWidget(self._build_settings_group())
+
+        self.statusBar().showMessage("Ready")
+        self.statusBar().setSizeGripEnabled(True)
+
+        self.resize(425, 280)
+        self.setMinimumSize(425, 280)
+        self.setWindowFlag(Qt.WindowStaysOnTopHint)
+
+    def _build_actions_group(self) -> QGroupBox:
+        group = QGroupBox("")
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(8)
 
         buttons_row = QHBoxLayout()
         buttons_row.setSpacing(8)
@@ -167,17 +157,17 @@ class MainWindow(QMainWindow):
         self.record_button = QPushButton("Start Recording")
         self.record_button.setObjectName("recordButton")
         self.record_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.record_button.setToolTip("Click or press F9 to start recording. Click or press F9 again to stop and transcribe.")
+        self.record_button.setToolTip("Click or press F9 to toggle recording")
         self.record_button.clicked.connect(self._toggle_recording)
         buttons_row.addWidget(self.record_button, 2)
 
         self.transcribe_file_button = QPushButton("Transcribe Audio File")
         self.transcribe_file_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.transcribe_file_button.setToolTip("Select an audio file to transcribe.")
+        self.transcribe_file_button.setToolTip("Select an audio file to transcribe")
         self.transcribe_file_button.clicked.connect(self._select_and_transcribe_file)
         buttons_row.addWidget(self.transcribe_file_button, 1)
 
-        actions_layout.addLayout(buttons_row)
+        layout.addLayout(buttons_row)
 
         mode_row = QHBoxLayout()
         mode_row.setSpacing(8)
@@ -188,9 +178,7 @@ class MainWindow(QMainWindow):
 
         self.transcribe_radio = QRadioButton("Transcribe")
         self.translate_radio = QRadioButton("Translate")
-
         self.transcribe_radio.toggled.connect(self._on_task_mode_changed)
-        self.translate_radio.toggled.connect(self._on_task_mode_changed)
 
         mode_row.addWidget(self.transcribe_radio)
         mode_row.addWidget(self.translate_radio)
@@ -203,19 +191,18 @@ class MainWindow(QMainWindow):
         self.clipboard_button.clicked.connect(self._toggle_clipboard)
         mode_row.addWidget(self.clipboard_button)
 
-        actions_layout.addLayout(mode_row)
+        layout.addLayout(mode_row)
+        return group
 
-        actions_group.setLayout(actions_layout)
-        root.addWidget(actions_group)
-
-        settings_group = QGroupBox("")
-        settings_layout = QVBoxLayout()
-        settings_layout.setContentsMargins(2, 2, 2, 2)
-        settings_layout.setSpacing(8)
+    def _build_settings_group(self) -> QGroupBox:
+        group = QGroupBox("")
+        layout = QVBoxLayout(group)
+        layout.setContentsMargins(2, 2, 2, 2)
+        layout.setSpacing(8)
 
         self.model_dropdown = QComboBox()
         self.model_dropdown.addItems(ModelMetadata.get_all_model_names())
-        self.model_dropdown.setToolTip("Choose a Whisper model.")
+        self.model_dropdown.setToolTip("Choose a Whisper model")
 
         self.loaded_model_label = QLabel("Not loaded")
         self.loaded_model_label.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
@@ -231,272 +218,209 @@ class MainWindow(QMainWindow):
         form_top.setContentsMargins(0, 0, 0, 0)
         form_top.setHorizontalSpacing(10)
         form_top.setVerticalSpacing(6)
-        form_top.setFormAlignment(Qt.AlignTop)
-        form_top.setLabelAlignment(Qt.AlignLeft)
         form_top.addRow("Model", model_row)
-        settings_layout.addLayout(form_top)
+        layout.addLayout(form_top)
 
         self.device_dropdown = QComboBox()
         self.device_dropdown.addItems(["cpu", "cuda"] if self.cuda_available else ["cpu"])
-        self.device_dropdown.setToolTip("Choose the compute device.")
+        self.device_dropdown.setToolTip("Choose the compute device")
 
         self.quantization_dropdown = QComboBox()
-        self.quantization_dropdown.setToolTip("Choose the compute type (quantization).")
+        self.quantization_dropdown.setToolTip("Choose the compute type (quantization)")
+
+        self.append_checkbox = QCheckBox("Append")
+        self.append_checkbox.setToolTip("Append new transcriptions instead of replacing")
+        self.append_checkbox.toggled.connect(self._on_append_toggled)
 
         row = QHBoxLayout()
         row.setSpacing(10)
 
-        left_form = QFormLayout()
-        left_form.setContentsMargins(0, 0, 0, 0)
-        left_form.setHorizontalSpacing(10)
-        left_form.setVerticalSpacing(6)
-        left_form.setLabelAlignment(Qt.AlignLeft)
-        left_form.addRow("Device", self.device_dropdown)
+        for label, widget in [("Device", self.device_dropdown), ("Quantization", self.quantization_dropdown)]:
+            form = QFormLayout()
+            form.setContentsMargins(0, 0, 0, 0)
+            form.setHorizontalSpacing(10)
+            form.setVerticalSpacing(6)
+            form.addRow(label, widget)
+            row.addLayout(form, 1)
 
-        right_form = QFormLayout()
-        right_form.setContentsMargins(0, 0, 0, 0)
-        right_form.setHorizontalSpacing(10)
-        right_form.setVerticalSpacing(6)
-        right_form.setLabelAlignment(Qt.AlignLeft)
-        right_form.addRow("Quantization", self.quantization_dropdown)
-
-        row.addLayout(left_form, 1)
-        row.addLayout(right_form, 1)
-        settings_layout.addLayout(row)
+        row.addWidget(self.append_checkbox, 0)
+        layout.addLayout(row)
 
         self.update_model_btn = QPushButton("Update Settings")
         self.update_model_btn.setObjectName("updateButton")
-        self.update_model_btn.setToolTip("Load the selected model and settings.")
-        self.update_model_btn.clicked.connect(self.update_model)
-        settings_layout.addWidget(self.update_model_btn)
+        self.update_model_btn.setToolTip("Load the selected model and settings")
+        self.update_model_btn.clicked.connect(self._update_model)
+        layout.addWidget(self.update_model_btn)
 
-        settings_group.setLayout(settings_layout)
-        root.addWidget(settings_group)
-
-        self.statusBar().showMessage("Ready")
-        self.statusBar().setSizeGripEnabled(True)
-
-        self.resize(425, 280)
-        self.setMinimumSize(425, 280)
-        self.setWindowFlag(Qt.WindowStaysOnTopHint)
+        return group
 
     def _host_rect_global(self) -> QRect:
-        top_left = self.mapToGlobal(self.rect().topLeft())
-        return QRect(top_left.x(), top_left.y(), self.width(), self.height())
+        pos = self.mapToGlobal(self.rect().topLeft())
+        return QRect(pos.x(), pos.y(), self.width(), self.height())
 
-    @Slot()
-    def _on_clipboard_closed(self) -> None:
-        self._clipboard_visible = False
-        self._update_clipboard_button_text()
-        self._save_clipboard_setting(False)
-
-    @Slot(bool)
-    def _on_clipboard_docked_changed(self, docked: bool) -> None:
-        logger.debug(f"Clipboard docked state changed: {docked}")
+    def _save_config(self, key: str, value) -> None:
+        try:
+            config_manager.set_value(key, value)
+        except Exception as e:
+            logger.warning(f"Failed to save {key}: {e}")
 
     def _load_config(self) -> None:
         try:
             config = config_manager.load_config()
 
-            model = config["model_name"]
-            quant = config["quantization_type"]
-            device = config["device_type"]
             self.supported_quantizations = config["supported_quantizations"]
-            show_clipboard = config["show_clipboard_window"]
             self.task_mode = config.get("task_mode", "transcribe")
 
-            model_names = ModelMetadata.get_all_model_names()
-            if model in model_names:
-                self.model_dropdown.setCurrentText(model)
+            if config["model_name"] in ModelMetadata.get_all_model_names():
+                self.model_dropdown.setCurrentText(config["model_name"])
 
-            if device in [self.device_dropdown.itemText(i) for i in range(self.device_dropdown.count())]:
-                self.device_dropdown.setCurrentText(device)
+            if config["device_type"] in [self.device_dropdown.itemText(i) for i in range(self.device_dropdown.count())]:
+                self.device_dropdown.setCurrentText(config["device_type"])
 
             self.update_quantization_options()
 
-            if quant in [self.quantization_dropdown.itemText(i) for i in range(self.quantization_dropdown.count())]:
-                self.quantization_dropdown.setCurrentText(quant)
+            if config["quantization_type"] in [self.quantization_dropdown.itemText(i) for i in range(self.quantization_dropdown.count())]:
+                self.quantization_dropdown.setCurrentText(config["quantization_type"])
 
-            if self.task_mode == "transcribe":
-                self.transcribe_radio.setChecked(True)
-            else:
-                self.translate_radio.setChecked(True)
-
+            self.transcribe_radio.setChecked(self.task_mode == "transcribe")
+            self.translate_radio.setChecked(self.task_mode != "transcribe")
             self._update_translation_availability(self.model_dropdown.currentText())
 
-            self._clipboard_visible = bool(show_clipboard)
+            self._clipboard_visible = config.get("show_clipboard_window", False)
             if self._clipboard_visible:
                 self.clipboard_window.show_docked(self._host_rect_global(), gap=10, animate=False)
             self._update_clipboard_button_text()
 
+            self.append_checkbox.blockSignals(True)
+            self.append_checkbox.setChecked(config.get("clipboard_append_mode", False))
+            self.append_checkbox.blockSignals(False)
+            self.clipboard_window.set_append_mode(self.append_checkbox.isChecked())
+            self.clipboard_window.set_always_on_top(config.get("clipboard_always_on_top", True))
+
         except Exception as e:
             logger.error(f"Failed to load config: {e}")
 
-    def _save_clipboard_setting(self, show_clipboard: bool) -> None:
-        try:
-            config_manager.set_value("show_clipboard_window", show_clipboard)
-        except Exception as e:
-            logger.warning(f"Failed to save clipboard setting: {e}")
-
-    def _update_loaded_model_label(self, model_name: str) -> None:
-        self.loaded_model_label.setText(model_name)
-
     def _update_translation_availability(self, model_name: str) -> None:
-        translation_capable = ModelMetadata.supports_translation(model_name)
+        can_translate = ModelMetadata.supports_translation(model_name)
+        self.translate_radio.setEnabled(can_translate)
+        self.translate_radio.setToolTip("" if can_translate else "Translation not supported by the selected model")
 
-        self.translate_radio.setEnabled(translation_capable)
+        if not can_translate and self.translate_radio.isChecked():
+            self.transcribe_radio.setChecked(True)
+            self.task_mode = "transcribe"
+            self._save_config("task_mode", self.task_mode)
+            self.controller.set_task_mode(self.task_mode)
 
-        if not translation_capable:
-            self.translate_radio.setToolTip("Translation not supported by the selected model.")
-            if self.translate_radio.isChecked():
-                self.transcribe_radio.setChecked(True)
-                self.task_mode = "transcribe"
-                try:
-                    config_manager.set_value("task_mode", self.task_mode)
-                except Exception as e:
-                    logger.warning(f"Failed to save task mode: {e}")
-                self.controller.set_task_mode(self.task_mode)
-        else:
-            self.translate_radio.setToolTip("")
+    @Slot()
+    def _on_clipboard_closed(self) -> None:
+        self._clipboard_visible = False
+        self._update_clipboard_button_text()
+        self._save_config("show_clipboard_window", False)
+
+    @Slot(bool)
+    def _on_append_toggled(self, checked: bool) -> None:
+        self.clipboard_window.set_append_mode(checked)
+        self._save_config("clipboard_append_mode", checked)
 
     @Slot(str, str)
     def _show_error_dialog(self, title: str, message: str) -> None:
-        logger.error(f"Error dialog shown - {title}: {message}")
+        logger.error(f"Error: {title} - {message}")
         QMessageBox.warning(self, title, message)
 
     @Slot()
     def _on_dropdown_changed(self) -> None:
-        self._update_button_state()
-
-    @Slot()
-    def _on_task_mode_changed(self) -> None:
-        if self.transcribe_radio.isChecked():
-            self.task_mode = "transcribe"
-        else:
-            self.task_mode = "translate"
-
-        try:
-            config_manager.set_value("task_mode", self.task_mode)
-        except Exception as e:
-            logger.warning(f"Failed to save task mode: {e}")
-
-        self.controller.set_task_mode(self.task_mode)
-
-    def _update_button_state(self) -> None:
-        current_selections = {
+        current = {
             "model_name": self.model_dropdown.currentText(),
             "quantization_type": self.quantization_dropdown.currentText(),
             "device_type": self.device_dropdown.currentText(),
         }
-
-        has_changes = current_selections != self.loaded_model_settings
-
-        if has_changes:
-            self.update_model_btn.setText("Reload Model to Apply Changes")
-        else:
-            self.update_model_btn.setText("Update Settings")
-
+        has_changes = current != self.loaded_model_settings
+        self.update_model_btn.setText("Reload Model to Apply Changes" if has_changes else "Update Settings")
         update_button_property(self.update_model_btn, "changed", has_changes)
 
+    @Slot()
+    def _on_task_mode_changed(self) -> None:
+        self.task_mode = "transcribe" if self.transcribe_radio.isChecked() else "translate"
+        self._save_config("task_mode", self.task_mode)
+        self.controller.set_task_mode(self.task_mode)
+
     @Slot(str, str, str)
-    def _on_model_loaded_success(self, model_name: str, quantization_type: str, device_type: str) -> None:
-        self.loaded_model_settings = {
-            "model_name": model_name,
-            "quantization_type": quantization_type,
-            "device_type": device_type,
-        }
-        self._update_loaded_model_label(model_name)
-        self._update_button_state()
+    def _on_model_loaded_success(self, model_name: str, quant: str, device: str) -> None:
+        self.loaded_model_settings = {"model_name": model_name, "quantization_type": quant, "device_type": device}
+        self.loaded_model_label.setText(model_name)
+        self._on_dropdown_changed()
         self._update_translation_availability(model_name)
 
     @Slot()
     def _toggle_recording(self) -> None:
-        if not self.is_recording:
+        self.is_recording = not self.is_recording
+        if self.is_recording:
             self.controller.start_recording()
-            self.is_recording = True
             self.record_button.setText("Click to Stop and Transcribe")
         else:
             self.controller.stop_recording()
-            self.is_recording = False
             self.record_button.setText("Start Recording")
-
         update_button_property(self.record_button, "recording", self.is_recording)
 
-    def _is_supported_audio_file(self, file_path: str) -> bool:
+    def _is_supported_audio_file(self, path: str) -> bool:
         try:
-            return Path(file_path).suffix.lower() in SUPPORTED_AUDIO_EXTENSIONS
+            return Path(path).suffix.lower() in SUPPORTED_AUDIO_EXTENSIONS
         except Exception:
             return False
 
     def _transcribe_specific_file(self, file_path: str) -> None:
-        if not file_path:
-            return
-
-        if not self._is_supported_audio_file(file_path):
-            self.update_status("Unsupported file type")
-            QMessageBox.warning(self, "Unsupported File", "Please drop a supported audio file.")
+        if not file_path or not self._is_supported_audio_file(file_path):
+            self.statusBar().showMessage("Unsupported file type")
+            QMessageBox.warning(self, "Unsupported File", "Please select a supported audio file.")
             return
 
         if not self.transcribe_file_button.isEnabled():
-            self.update_status("Busy")
+            self.statusBar().showMessage("Busy")
             return
 
         dlg = BatchSizeDialog(self, default_value=16)
-        if dlg.exec() != QDialog.Accepted:
-            return
-
-        batch_size = dlg.batch_size()
-        logger.info(f"Selected file for transcription: {file_path} (batch_size={batch_size})")
-        self.controller.transcribe_file(file_path, batch_size=batch_size)
+        if dlg.exec() == QDialog.Accepted:
+            logger.info(f"Transcribing: {file_path} (batch={dlg.batch_size()})")
+            self.controller.transcribe_file(file_path, batch_size=dlg.batch_size())
 
     @Slot()
     def _select_and_transcribe_file(self) -> None:
-        extensions_filter = " ".join(f"*{ext}" for ext in SUPPORTED_AUDIO_EXTENSIONS)
-        file_filter = f"Audio Files ({extensions_filter});;All Files (*)"
-
-        file_path, _ = QFileDialog.getOpenFileName(self, "Select Audio File", "", file_filter)
-
-        if not file_path:
-            return
-
-        self._transcribe_specific_file(file_path)
+        exts = " ".join(f"*{ext}" for ext in SUPPORTED_AUDIO_EXTENSIONS)
+        path, _ = QFileDialog.getOpenFileName(self, "Select Audio File", "", f"Audio Files ({exts});;All Files (*)")
+        if path:
+            self._transcribe_specific_file(path)
 
     @Slot()
     def _toggle_clipboard(self) -> None:
+        self._clipboard_visible = not self._clipboard_visible
+        self._update_clipboard_button_text()
+        self._save_config("show_clipboard_window", self._clipboard_visible)
+
+        host_rect = self._host_rect_global()
         if self._clipboard_visible:
-            self._hide_clipboard()
+            if self.clipboard_window.is_docked():
+                self.clipboard_window.show_docked(host_rect, gap=10)
+            else:
+                self.clipboard_window.show()
+                self.clipboard_window.raise_()
         else:
-            self._show_clipboard()
-
-    def _show_clipboard(self, animate: bool = True) -> None:
-        self._clipboard_visible = True
-        self._update_clipboard_button_text()
-        host_rect = self._host_rect_global()
-
-        if self.clipboard_window.is_docked():
-            self.clipboard_window.show_docked(host_rect, gap=10, animate=animate)
-        else:
-            self.clipboard_window.show()
-            self.clipboard_window.raise_()
-
-        self._save_clipboard_setting(True)
-
-    def _hide_clipboard(self, animate: bool = True) -> None:
-        self._clipboard_visible = False
-        self._update_clipboard_button_text()
-        host_rect = self._host_rect_global()
-        self.clipboard_window.hide_animated(host_rect, gap=10, animate=animate)
-        self._save_clipboard_setting(False)
+            self.clipboard_window.hide_animated(host_rect, gap=10)
 
     def _update_clipboard_button_text(self) -> None:
         self.clipboard_button.setText("Hide Clipboard" if self._clipboard_visible else "Show Clipboard")
 
-    def update_clipboard(self, text: str) -> None:
-        self.clipboard_window.update_text(text)
+    @Slot(str)
+    def _on_transcription_ready(self, text: str) -> None:
+        self.clipboard_window.add_transcription(text)
+
+        if app := QApplication.instance():
+            clip_text = self.clipboard_window.get_full_text() if self.clipboard_window.is_append_mode() else text
+            app.clipboard().setText(clip_text)
+
         if self.is_recording:
             self.is_recording = False
             self.record_button.setText("Start Recording")
-            update_button_property(self.record_button, "recording", self.is_recording)
+            update_button_property(self.record_button, "recording", False)
 
     @Slot()
     def update_quantization_options(self) -> None:
@@ -505,20 +429,16 @@ class MainWindow(QMainWindow):
         opts = ModelMetadata.get_quantization_options(model, device, self.supported_quantizations)
 
         self.quantization_dropdown.blockSignals(True)
-        current_text = self.quantization_dropdown.currentText()
+        current = self.quantization_dropdown.currentText()
         self.quantization_dropdown.clear()
         self.quantization_dropdown.addItems(opts)
-
-        if current_text in opts:
-            self.quantization_dropdown.setCurrentText(current_text)
-        elif opts:
-            self.quantization_dropdown.setCurrentText(opts[0])
-
+        self.quantization_dropdown.setCurrentText(current if current in opts else (opts[0] if opts else ""))
         self.quantization_dropdown.blockSignals(False)
 
-        self._update_button_state()
+        self._on_dropdown_changed()
 
-    def update_model(self) -> None:
+    @Slot()
+    def _update_model(self) -> None:
         self.loaded_model_label.setText("Loading...")
         self.controller.update_model(
             self.model_dropdown.currentText(),
@@ -526,79 +446,63 @@ class MainWindow(QMainWindow):
             self.device_dropdown.currentText(),
         )
 
-    @Slot(str)
-    def update_status(self, text: str) -> None:
-        self.statusBar().showMessage(text)
-
     @Slot(bool)
     def set_widgets_enabled(self, enabled: bool) -> None:
-        self.record_button.setEnabled(enabled)
-        self.transcribe_file_button.setEnabled(enabled)
-        self.clipboard_button.setEnabled(enabled)
-        self.model_dropdown.setEnabled(enabled)
-        self.quantization_dropdown.setEnabled(enabled)
-        self.device_dropdown.setEnabled(enabled)
-        self.update_model_btn.setEnabled(enabled)
-        self.transcribe_radio.setEnabled(enabled)
+        widgets = [
+            self.record_button, self.transcribe_file_button, self.clipboard_button,
+            self.model_dropdown, self.quantization_dropdown, self.device_dropdown,
+            self.update_model_btn, self.transcribe_radio, self.append_checkbox,
+        ]
+        for w in widgets:
+            w.setEnabled(enabled)
 
-        current_model = self.model_dropdown.currentText()
-        self.translate_radio.setEnabled(enabled and ModelMetadata.supports_translation(current_model))
+        self.translate_radio.setEnabled(enabled and ModelMetadata.supports_translation(self.model_dropdown.currentText()))
 
         if not enabled and self.is_recording:
             self.is_recording = False
             self.record_button.setText("Start Recording")
-            update_button_property(self.record_button, "recording", self.is_recording)
+            update_button_property(self.record_button, "recording", False)
 
     def _extract_first_supported_drop(self, event) -> str | None:
-        md = event.mimeData()
-        if not md or not md.hasUrls():
+        if not (md := event.mimeData()) or not md.hasUrls():
             return None
-
         for url in md.urls():
-            if not url.isLocalFile():
-                continue
-            p = url.toLocalFile()
-            if p and self._is_supported_audio_file(p):
+            if url.isLocalFile() and self._is_supported_audio_file(p := url.toLocalFile()):
                 return p
         return None
 
     def eventFilter(self, obj, event):
         et = event.type()
         if et in (QEvent.DragEnter, QEvent.DragMove):
-            p = self._extract_first_supported_drop(event)
-            if p:
+            if self._extract_first_supported_drop(event):
                 event.acceptProposedAction()
                 return True
-            return False
-
-        if et == QEvent.Drop:
-            p = self._extract_first_supported_drop(event)
-            if p:
+        elif et == QEvent.Drop:
+            if p := self._extract_first_supported_drop(event):
                 event.acceptProposedAction()
                 self._transcribe_specific_file(p)
                 return True
-            return False
-
         return super().eventFilter(obj, event)
 
     def moveEvent(self, event):
         super().moveEvent(event)
+        host_rect = self._host_rect_global()
+        self.clipboard_window.update_host_rect(host_rect)
         if self.clipboard_window.isVisible() and self.clipboard_window.is_docked():
-            self.clipboard_window.reposition_to_host(self._host_rect_global(), gap=10)
+            self.clipboard_window.reposition_to_host(host_rect, gap=10)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
+        host_rect = self._host_rect_global()
+        self.clipboard_window.update_host_rect(host_rect)
         if self.clipboard_window.isVisible() and self.clipboard_window.is_docked():
-            self.clipboard_window.reposition_to_host(self._host_rect_global(), gap=10)
+            self.clipboard_window.reposition_to_host(host_rect, gap=10)
 
     def closeEvent(self, event):
-        self._save_clipboard_setting(self._clipboard_visible)
-        self.clipboard_window.hide()
+        self._save_config("show_clipboard_window", self._clipboard_visible)
         self.clipboard_window.close()
         self.controller.stop_all_threads()
-
         if hasattr(self, "global_hotkey"):
             self.global_hotkey.stop()
-
         logger.info("Application closing")
         super().closeEvent(event)
