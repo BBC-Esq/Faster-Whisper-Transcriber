@@ -1,7 +1,4 @@
 # 🎙️ Faster Whisper Transcriber
-
-> Voice-to-text transcription powered by CTranslate2 — speak, transcribe, and paste into your favorite LLM in seconds.
-
 <img width="795" height="309" alt="image" src="https://github.com/user-attachments/assets/8a3dce7f-6cfa-4c3a-9572-ffc3a6ca9843" />
 
 
