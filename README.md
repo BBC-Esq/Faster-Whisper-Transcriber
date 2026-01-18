@@ -25,4 +25,4 @@ python main.py
 ## 🚀 Easy Installer (transcription only)
 
 [easy installer version](https://github.com/user-attachments/files/24696904/EasyInstaller.-.Limited.Features.zip)
-> requires ```.net```
+> requires [```.net```](https://dotnet.microsoft.com/en-us/download)
