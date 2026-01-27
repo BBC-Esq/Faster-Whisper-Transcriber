@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import Qt, Slot, QRect, QEvent, Signal
+from PySide6.QtCore import Qt, Slot, QRect, QEvent, Signal, QSettings, QByteArray
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -40,6 +40,18 @@ SUPPORTED_AUDIO_EXTENSIONS = {
     ".mkv", ".mp3", ".mp4", ".wav", ".webm", ".wma",
 }
 
+# QSettings keys
+SETTINGS_GEOMETRY = "window/geometry"
+SETTINGS_CLIPBOARD_GEOMETRY = "clipboard/geometry"
+SETTINGS_CLIPBOARD_DOCKED = "clipboard/docked"
+SETTINGS_CLIPBOARD_VISIBLE = "clipboard/visible"
+SETTINGS_CLIPBOARD_ALWAYS_ON_TOP = "clipboard/always_on_top"
+SETTINGS_APPEND_MODE = "clipboard/append_mode"
+SETTINGS_MODEL = "model/name"
+SETTINGS_DEVICE = "model/device"
+SETTINGS_QUANTIZATION = "model/quantization"
+SETTINGS_TASK_MODE = "model/task_mode"
+
 
 class BatchSizeDialog(QDialog):
     def __init__(self, parent: QWidget | None = None, default_value: int = 16):
@@ -75,11 +87,26 @@ class BatchSizeDialog(QDialog):
 class MainWindow(QMainWindow):
     hotkey_toggle_recording = Signal()
 
+    # Default values for settings
+    DEFAULTS = {
+        "model": "base.en",
+        "device": "cpu",
+        "quantization": "float32",
+        "task_mode": "transcribe",
+        "append_mode": False,
+        "clipboard_visible": False,
+        "clipboard_always_on_top": True,
+        "clipboard_docked": True,
+    }
+
     def __init__(self, cuda_available: bool = False):
         super().__init__()
 
         self.setWindowTitle("Faster Whisper Transcriber")
         self.setStyleSheet(APP_STYLESHEET)
+
+        # Initialize QSettings
+        self.settings = QSettings("FasterWhisperTranscriber", "Transcriber")
 
         self.loaded_model_settings = config_manager.get_model_settings()
         self.task_mode = config_manager.get_value("task_mode", "transcribe")
@@ -93,17 +120,16 @@ class MainWindow(QMainWindow):
         self.clipboard_window = ClipboardSideWindow(None, width=360)
         self.clipboard_window.user_closed.connect(self._on_clipboard_closed)
         self.clipboard_window.docked_changed.connect(lambda d: logger.debug(f"Clipboard docked: {d}"))
-        self.clipboard_window.always_on_top_changed.connect(lambda v: self._save_config("clipboard_always_on_top", v))
+        self.clipboard_window.always_on_top_changed.connect(self._on_clipboard_always_on_top_changed)
 
         self._build_ui()
         self._setup_connections()
-        self._load_config()
 
-        if not self.supported_quantizations.get("cpu") or (cuda_available and not self.supported_quantizations.get("cuda")):
-            CheckQuantizationSupport().update_supported_quantizations()
-            self._load_config()
+        # Load quantization support first (needed for validation)
+        self._load_quantization_support()
 
-        self.update_quantization_options()
+        # Restore state from QSettings with validation
+        self._restore_state()
 
         self.hotkey_toggle_recording.connect(self._toggle_recording, Qt.QueuedConnection)
         self.global_hotkey = GlobalHotkey(lambda: self.hotkey_toggle_recording.emit())
@@ -114,6 +140,178 @@ class MainWindow(QMainWindow):
             app.installEventFilter(self)
 
         logger.info("MainWindow initialized")
+
+    def _load_quantization_support(self) -> None:
+        """Load quantization support, updating if necessary."""
+        try:
+            config = config_manager.load_config()
+            self.supported_quantizations = config.get("supported_quantizations", {"cpu": [], "cuda": []})
+
+            # Update if not populated
+            if not self.supported_quantizations.get("cpu") or (
+                self.cuda_available and not self.supported_quantizations.get("cuda")
+            ):
+                CheckQuantizationSupport().update_supported_quantizations()
+                config = config_manager.load_config()
+                self.supported_quantizations = config.get("supported_quantizations", {"cpu": [], "cuda": []})
+        except Exception as e:
+            logger.error(f"Failed to load quantization support: {e}")
+            self.supported_quantizations = {"cpu": ["float32"], "cuda": []}
+
+    def _validate_model(self, model_name: str) -> str:
+        """Validate model name, return default if invalid."""
+        valid_models = ModelMetadata.get_all_model_names()
+        if model_name in valid_models:
+            return model_name
+        logger.warning(f"Invalid model '{model_name}', falling back to default")
+        return self.DEFAULTS["model"]
+
+    def _validate_device(self, device: str) -> str:
+        """Validate device, return default if invalid (e.g., CUDA no longer available)."""
+        if device == "cuda" and not self.cuda_available:
+            logger.warning("CUDA no longer available, falling back to CPU")
+            return "cpu"
+        if device in ["cpu", "cuda"]:
+            return device
+        logger.warning(f"Invalid device '{device}', falling back to default")
+        return self.DEFAULTS["device"]
+
+    def _validate_quantization(self, quantization: str, model_name: str, device: str) -> str:
+        """Validate quantization for the given model/device, return default if invalid."""
+        available = ModelMetadata.get_quantization_options(model_name, device, self.supported_quantizations)
+        if quantization in available:
+            return quantization
+        if available:
+            logger.warning(f"Quantization '{quantization}' not available for {model_name}/{device}, using {available[0]}")
+            return available[0]
+        logger.warning(f"No quantizations available for {model_name}/{device}, using float32")
+        return "float32"
+
+    def _validate_task_mode(self, task_mode: str, model_name: str) -> str:
+        """Validate task mode for the given model."""
+        if task_mode == "translate" and not ModelMetadata.supports_translation(model_name):
+            logger.warning(f"Model '{model_name}' doesn't support translation, falling back to transcribe")
+            return "transcribe"
+        if task_mode in ["transcribe", "translate"]:
+            return task_mode
+        return self.DEFAULTS["task_mode"]
+
+    def _restore_state(self) -> None:
+        """Restore application state from QSettings with validation and fallbacks."""
+        logger.info("Restoring application state from QSettings")
+
+        # Restore main window geometry
+        geometry = self.settings.value(SETTINGS_GEOMETRY)
+        if geometry and isinstance(geometry, QByteArray):
+            if not self.restoreGeometry(geometry):
+                logger.warning("Failed to restore main window geometry, using defaults")
+                self.resize(425, 280)
+                self._center_on_screen()
+        else:
+            self.resize(425, 280)
+            self._center_on_screen()
+
+        # Restore and validate model settings
+        saved_model = self.settings.value(SETTINGS_MODEL, self.DEFAULTS["model"])
+        saved_device = self.settings.value(SETTINGS_DEVICE, self.DEFAULTS["device"])
+        saved_quant = self.settings.value(SETTINGS_QUANTIZATION, self.DEFAULTS["quantization"])
+        saved_task = self.settings.value(SETTINGS_TASK_MODE, self.DEFAULTS["task_mode"])
+
+        # Validate with fallbacks
+        model = self._validate_model(saved_model)
+        device = self._validate_device(saved_device)
+        quantization = self._validate_quantization(saved_quant, model, device)
+        task_mode = self._validate_task_mode(saved_task, model)
+
+        # Apply validated settings to UI
+        self.model_dropdown.setCurrentText(model)
+        self.device_dropdown.setCurrentText(device)
+        self.update_quantization_options()
+        self.quantization_dropdown.setCurrentText(quantization)
+
+        self.task_mode = task_mode
+        self.transcribe_radio.setChecked(task_mode == "transcribe")
+        self.translate_radio.setChecked(task_mode != "transcribe")
+        self._update_translation_availability(model)
+
+        # Restore clipboard settings
+        append_mode = self.settings.value(SETTINGS_APPEND_MODE, self.DEFAULTS["append_mode"], type=bool)
+        self.append_checkbox.blockSignals(True)
+        self.append_checkbox.setChecked(append_mode)
+        self.append_checkbox.blockSignals(False)
+        self.clipboard_window.set_append_mode(append_mode)
+
+        always_on_top = self.settings.value(SETTINGS_CLIPBOARD_ALWAYS_ON_TOP, self.DEFAULTS["clipboard_always_on_top"], type=bool)
+        self.clipboard_window.set_always_on_top(always_on_top)
+
+        clipboard_docked = self.settings.value(SETTINGS_CLIPBOARD_DOCKED, self.DEFAULTS["clipboard_docked"], type=bool)
+        self._clipboard_visible = self.settings.value(SETTINGS_CLIPBOARD_VISIBLE, self.DEFAULTS["clipboard_visible"], type=bool)
+
+        # Restore clipboard window geometry if undocked
+        if self._clipboard_visible:
+            if clipboard_docked:
+                self.clipboard_window.show_docked(self._host_rect_global(), gap=10, animate=False)
+            else:
+                # Restore undocked position
+                clip_geometry = self.settings.value(SETTINGS_CLIPBOARD_GEOMETRY)
+                if clip_geometry and isinstance(clip_geometry, QByteArray):
+                    self.clipboard_window.set_docked(False)
+                    self.clipboard_window.restoreGeometry(clip_geometry)
+                    self.clipboard_window.show()
+                else:
+                    # Fallback to docked if geometry restoration fails
+                    self.clipboard_window.show_docked(self._host_rect_global(), gap=10, animate=False)
+
+        self._update_clipboard_button_text()
+
+        # Update config manager with validated settings
+        try:
+            config_manager.set_model_settings(model, quantization, device)
+            config_manager.set_value("task_mode", task_mode)
+            config_manager.set_value("clipboard_append_mode", append_mode)
+            config_manager.set_value("show_clipboard_window", self._clipboard_visible)
+        except Exception as e:
+            logger.warning(f"Failed to sync config manager: {e}")
+
+        logger.info(f"State restored: model={model}, device={device}, quant={quantization}, task={task_mode}")
+
+    def _save_state(self) -> None:
+        """Save application state to QSettings."""
+        logger.info("Saving application state to QSettings")
+
+        # Save main window geometry
+        self.settings.setValue(SETTINGS_GEOMETRY, self.saveGeometry())
+
+        # Save model settings
+        self.settings.setValue(SETTINGS_MODEL, self.model_dropdown.currentText())
+        self.settings.setValue(SETTINGS_DEVICE, self.device_dropdown.currentText())
+        self.settings.setValue(SETTINGS_QUANTIZATION, self.quantization_dropdown.currentText())
+        self.settings.setValue(SETTINGS_TASK_MODE, self.task_mode)
+
+        # Save clipboard settings
+        self.settings.setValue(SETTINGS_APPEND_MODE, self.append_checkbox.isChecked())
+        self.settings.setValue(SETTINGS_CLIPBOARD_VISIBLE, self._clipboard_visible)
+        self.settings.setValue(SETTINGS_CLIPBOARD_ALWAYS_ON_TOP, self.clipboard_window.is_always_on_top())
+        self.settings.setValue(SETTINGS_CLIPBOARD_DOCKED, self.clipboard_window.is_docked())
+
+        # Save clipboard geometry if undocked
+        if not self.clipboard_window.is_docked():
+            self.settings.setValue(SETTINGS_CLIPBOARD_GEOMETRY, self.clipboard_window.saveGeometry())
+
+        self.settings.sync()
+        logger.debug("State saved successfully")
+
+    def _center_on_screen(self) -> None:
+        """Center the window on the primary screen."""
+        if screen := QApplication.primaryScreen():
+            screen_geometry = screen.availableGeometry()
+            x = (screen_geometry.width() - self.width()) // 2 + screen_geometry.x()
+            y = (screen_geometry.height() - self.height()) // 2 + screen_geometry.y()
+            self.move(x, y)
+
+    def _on_clipboard_always_on_top_changed(self, value: bool) -> None:
+        """Handle clipboard always-on-top change."""
+        self.settings.setValue(SETTINGS_CLIPBOARD_ALWAYS_ON_TOP, value)
 
     def _setup_connections(self) -> None:
         self.device_dropdown.currentTextChanged.connect(self.update_quantization_options)
@@ -273,42 +471,6 @@ class MainWindow(QMainWindow):
             config_manager.set_value(key, value)
         except Exception as e:
             logger.warning(f"Failed to save {key}: {e}")
-
-    def _load_config(self) -> None:
-        try:
-            config = config_manager.load_config()
-
-            self.supported_quantizations = config["supported_quantizations"]
-            self.task_mode = config.get("task_mode", "transcribe")
-
-            if config["model_name"] in ModelMetadata.get_all_model_names():
-                self.model_dropdown.setCurrentText(config["model_name"])
-
-            if config["device_type"] in [self.device_dropdown.itemText(i) for i in range(self.device_dropdown.count())]:
-                self.device_dropdown.setCurrentText(config["device_type"])
-
-            self.update_quantization_options()
-
-            if config["quantization_type"] in [self.quantization_dropdown.itemText(i) for i in range(self.quantization_dropdown.count())]:
-                self.quantization_dropdown.setCurrentText(config["quantization_type"])
-
-            self.transcribe_radio.setChecked(self.task_mode == "transcribe")
-            self.translate_radio.setChecked(self.task_mode != "transcribe")
-            self._update_translation_availability(self.model_dropdown.currentText())
-
-            self._clipboard_visible = config.get("show_clipboard_window", False)
-            if self._clipboard_visible:
-                self.clipboard_window.show_docked(self._host_rect_global(), gap=10, animate=False)
-            self._update_clipboard_button_text()
-
-            self.append_checkbox.blockSignals(True)
-            self.append_checkbox.setChecked(config.get("clipboard_append_mode", False))
-            self.append_checkbox.blockSignals(False)
-            self.clipboard_window.set_append_mode(self.append_checkbox.isChecked())
-            self.clipboard_window.set_always_on_top(config.get("clipboard_always_on_top", True))
-
-        except Exception as e:
-            logger.error(f"Failed to load config: {e}")
 
     def _update_translation_availability(self, model_name: str) -> None:
         can_translate = ModelMetadata.supports_translation(model_name)
@@ -507,6 +669,9 @@ class MainWindow(QMainWindow):
         self._sync_clipboard_position()
 
     def closeEvent(self, event):
+        # Save state before closing
+        self._save_state()
+
         self._save_config("show_clipboard_window", self._clipboard_visible)
         self.clipboard_window.close()
         self.controller.stop_all_threads()

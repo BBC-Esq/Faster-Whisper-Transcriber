@@ -63,14 +63,14 @@ class _TranscriptionRunnable(QRunnable):
                 )
 
             total_duration = info.duration if info and hasattr(info, 'duration') else 0
-            
+
             text_parts = []
             segment_count = 0
-            
+
             for segment in segments:
                 segment_count += 1
                 text_parts.append(segment.text)
-                
+
                 if total_duration > 0:
                     progress_percent = min(100, (segment.end / total_duration) * 100)
                     self.signals.progress_updated.emit(segment_count, -1, progress_percent)

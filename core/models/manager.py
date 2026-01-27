@@ -87,11 +87,11 @@ class ModelManager(QObject):
         }
         logger.info(f"Model loaded successfully: {name}")
         self.model_loaded.emit(name, quant, device)
-    
+
     def _on_model_error(self, error: str) -> None:
         logger.error(f"Model error: {error}")
         self.model_error.emit(error)
-    
+
     def cleanup(self) -> None:
         self._model_mutex.lock()
         try:

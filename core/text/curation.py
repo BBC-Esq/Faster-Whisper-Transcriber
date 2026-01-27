@@ -8,7 +8,7 @@ def _ensure_nltk() -> bool:
     global _nltk_initialized
     if _nltk_initialized:
         return True
-    
+
     try:
         import nltk
         nltk.download('punkt', quiet=True)
@@ -23,7 +23,7 @@ def _ensure_nltk() -> bool:
 def curate_text(text: str) -> str:
     if not _ensure_nltk():
         return text
-    
+
     try:
         from nltk.tokenize import sent_tokenize
         sentences = sent_tokenize(text)

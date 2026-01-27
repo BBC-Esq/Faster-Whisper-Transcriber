@@ -11,7 +11,6 @@ warnings.filterwarnings(
     message=r".*pkg_resources is deprecated as an API.*"
 )
 
-
 from core.cuda_setup import setup_cuda_if_available
 _cuda_paths_configured = setup_cuda_if_available()
 
@@ -39,6 +38,24 @@ def _global_exception_handler(exc_type, exc_value, exc_tb):
         )
 
 
+def _check_cuda_available() -> bool:
+    try:
+        import ctranslate2
+        return ctranslate2.get_cuda_device_count() > 0
+    except Exception:
+        return False
+
+
+def _get_cuda_device_name() -> str | None:
+    try:
+        import ctranslate2
+        if ctranslate2.get_cuda_device_count() > 0:
+            return "NVIDIA GPU"
+    except Exception:
+        pass
+    return None
+
+
 def run_gui() -> None:
     log_file = setup_logging()
     logger = get_logger(__name__)
@@ -52,13 +69,13 @@ def run_gui() -> None:
     app.setStyle('Fusion')
     _install_sigint_handler()
 
-    cuda_ok = False
-    with contextlib.suppress(ImportError):
-        import torch
-        cuda_ok = torch.cuda.is_available()
-        logger.info(f"CUDA available: {cuda_ok}")
-        if cuda_ok:
-            logger.info(f"CUDA device: {torch.cuda.get_device_name(0)}")
+    cuda_ok = _check_cuda_available()
+    logger.info(f"CUDA available: {cuda_ok}")
+
+    if cuda_ok:
+        device_name = _get_cuda_device_name()
+        if device_name:
+            logger.info(f"CUDA device: {device_name}")
 
     try:
         window = MainWindow(cuda_available=cuda_ok)
