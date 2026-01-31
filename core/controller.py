@@ -22,6 +22,7 @@ class TranscriberController(QObject):
     text_ready_signal = Signal(str)
     model_loaded_signal = Signal(str, str, str)
     error_occurred = Signal(str, str)
+    transcription_cancelled_signal = Signal()
 
     def __init__(
         self,
@@ -73,6 +74,7 @@ class TranscriberController(QObject):
         self.transcription_service.transcription_progress.connect(self._on_transcription_progress)
         self.transcription_service.transcription_completed.connect(self._on_transcription_completed)
         self.transcription_service.transcription_error.connect(self._on_transcription_error)
+        self.transcription_service.transcription_cancelled.connect(self._on_transcription_cancelled)
 
     def update_model(self, model_name: str, quant: str, device: str) -> None:
         self.enable_widgets_signal.emit(False)
@@ -85,6 +87,15 @@ class TranscriberController(QObject):
 
     def stop_recording(self) -> None:
         self.audio_manager.stop_recording()
+
+    def cancel_transcription(self) -> bool:
+        if self.transcription_service.cancel_transcription():
+            self.update_status_signal.emit("Cancelling...")
+            return True
+        return False
+
+    def is_transcribing(self) -> bool:
+        return self.transcription_service.is_transcribing()
 
     def transcribe_file(self, file_path: str, batch_size: int | None = None) -> None:
         model, model_version = self.model_manager.get_model()
@@ -166,6 +177,12 @@ class TranscriberController(QObject):
         self.update_status_signal.emit("Transcription failed")
         self.enable_widgets_signal.emit(True)
         self.error_occurred.emit("Transcription Error", error)
+
+    @Slot()
+    def _on_transcription_cancelled(self) -> None:
+        self.update_status_signal.emit("Transcription cancelled")
+        self.enable_widgets_signal.emit(True)
+        self.transcription_cancelled_signal.emit()
 
     def _load_settings(self) -> None:
         settings = config_manager.get_model_settings()

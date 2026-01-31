@@ -40,7 +40,6 @@ SUPPORTED_AUDIO_EXTENSIONS = {
     ".mkv", ".mp3", ".mp4", ".wav", ".webm", ".wma",
 }
 
-# QSettings keys
 SETTINGS_GEOMETRY = "window/geometry"
 SETTINGS_CLIPBOARD_GEOMETRY = "clipboard/geometry"
 SETTINGS_CLIPBOARD_DOCKED = "clipboard/docked"
@@ -87,7 +86,6 @@ class BatchSizeDialog(QDialog):
 class MainWindow(QMainWindow):
     hotkey_toggle_recording = Signal()
 
-    # Default values for settings
     DEFAULTS = {
         "model": "base.en",
         "device": "cpu",
@@ -105,7 +103,6 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("Faster Whisper Transcriber")
         self.setStyleSheet(APP_STYLESHEET)
 
-        # Initialize QSettings
         self.settings = QSettings("FasterWhisperTranscriber", "Transcriber")
 
         self.loaded_model_settings = config_manager.get_model_settings()
@@ -125,10 +122,8 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._setup_connections()
 
-        # Load quantization support first (needed for validation)
         self._load_quantization_support()
 
-        # Restore state from QSettings with validation
         self._restore_state()
 
         self.hotkey_toggle_recording.connect(self._toggle_recording, Qt.QueuedConnection)
@@ -142,12 +137,10 @@ class MainWindow(QMainWindow):
         logger.info("MainWindow initialized")
 
     def _load_quantization_support(self) -> None:
-        """Load quantization support, updating if necessary."""
         try:
             config = config_manager.load_config()
             self.supported_quantizations = config.get("supported_quantizations", {"cpu": [], "cuda": []})
 
-            # Update if not populated
             if not self.supported_quantizations.get("cpu") or (
                 self.cuda_available and not self.supported_quantizations.get("cuda")
             ):
@@ -159,7 +152,6 @@ class MainWindow(QMainWindow):
             self.supported_quantizations = {"cpu": ["float32"], "cuda": []}
 
     def _validate_model(self, model_name: str) -> str:
-        """Validate model name, return default if invalid."""
         valid_models = ModelMetadata.get_all_model_names()
         if model_name in valid_models:
             return model_name
@@ -167,7 +159,6 @@ class MainWindow(QMainWindow):
         return self.DEFAULTS["model"]
 
     def _validate_device(self, device: str) -> str:
-        """Validate device, return default if invalid (e.g., CUDA no longer available)."""
         if device == "cuda" and not self.cuda_available:
             logger.warning("CUDA no longer available, falling back to CPU")
             return "cpu"
@@ -177,7 +168,6 @@ class MainWindow(QMainWindow):
         return self.DEFAULTS["device"]
 
     def _validate_quantization(self, quantization: str, model_name: str, device: str) -> str:
-        """Validate quantization for the given model/device, return default if invalid."""
         available = ModelMetadata.get_quantization_options(model_name, device, self.supported_quantizations)
         if quantization in available:
             return quantization
@@ -188,7 +178,6 @@ class MainWindow(QMainWindow):
         return "float32"
 
     def _validate_task_mode(self, task_mode: str, model_name: str) -> str:
-        """Validate task mode for the given model."""
         if task_mode == "translate" and not ModelMetadata.supports_translation(model_name):
             logger.warning(f"Model '{model_name}' doesn't support translation, falling back to transcribe")
             return "transcribe"
@@ -197,10 +186,8 @@ class MainWindow(QMainWindow):
         return self.DEFAULTS["task_mode"]
 
     def _restore_state(self) -> None:
-        """Restore application state from QSettings with validation and fallbacks."""
         logger.info("Restoring application state from QSettings")
 
-        # Restore main window geometry
         geometry = self.settings.value(SETTINGS_GEOMETRY)
         if geometry and isinstance(geometry, QByteArray):
             if not self.restoreGeometry(geometry):
@@ -211,19 +198,16 @@ class MainWindow(QMainWindow):
             self.resize(425, 280)
             self._center_on_screen()
 
-        # Restore and validate model settings
         saved_model = self.settings.value(SETTINGS_MODEL, self.DEFAULTS["model"])
         saved_device = self.settings.value(SETTINGS_DEVICE, self.DEFAULTS["device"])
         saved_quant = self.settings.value(SETTINGS_QUANTIZATION, self.DEFAULTS["quantization"])
         saved_task = self.settings.value(SETTINGS_TASK_MODE, self.DEFAULTS["task_mode"])
 
-        # Validate with fallbacks
         model = self._validate_model(saved_model)
         device = self._validate_device(saved_device)
         quantization = self._validate_quantization(saved_quant, model, device)
         task_mode = self._validate_task_mode(saved_task, model)
 
-        # Apply validated settings to UI
         self.model_dropdown.setCurrentText(model)
         self.device_dropdown.setCurrentText(device)
         self.update_quantization_options()
@@ -234,7 +218,6 @@ class MainWindow(QMainWindow):
         self.translate_radio.setChecked(task_mode != "transcribe")
         self._update_translation_availability(model)
 
-        # Restore clipboard settings
         append_mode = self.settings.value(SETTINGS_APPEND_MODE, self.DEFAULTS["append_mode"], type=bool)
         self.append_checkbox.blockSignals(True)
         self.append_checkbox.setChecked(append_mode)
@@ -247,24 +230,20 @@ class MainWindow(QMainWindow):
         clipboard_docked = self.settings.value(SETTINGS_CLIPBOARD_DOCKED, self.DEFAULTS["clipboard_docked"], type=bool)
         self._clipboard_visible = self.settings.value(SETTINGS_CLIPBOARD_VISIBLE, self.DEFAULTS["clipboard_visible"], type=bool)
 
-        # Restore clipboard window geometry if undocked
         if self._clipboard_visible:
             if clipboard_docked:
                 self.clipboard_window.show_docked(self._host_rect_global(), gap=10, animate=False)
             else:
-                # Restore undocked position
                 clip_geometry = self.settings.value(SETTINGS_CLIPBOARD_GEOMETRY)
                 if clip_geometry and isinstance(clip_geometry, QByteArray):
                     self.clipboard_window.set_docked(False)
                     self.clipboard_window.restoreGeometry(clip_geometry)
                     self.clipboard_window.show()
                 else:
-                    # Fallback to docked if geometry restoration fails
                     self.clipboard_window.show_docked(self._host_rect_global(), gap=10, animate=False)
 
         self._update_clipboard_button_text()
 
-        # Update config manager with validated settings
         try:
             config_manager.set_model_settings(model, quantization, device)
             config_manager.set_value("task_mode", task_mode)
@@ -276,25 +255,20 @@ class MainWindow(QMainWindow):
         logger.info(f"State restored: model={model}, device={device}, quant={quantization}, task={task_mode}")
 
     def _save_state(self) -> None:
-        """Save application state to QSettings."""
         logger.info("Saving application state to QSettings")
 
-        # Save main window geometry
         self.settings.setValue(SETTINGS_GEOMETRY, self.saveGeometry())
 
-        # Save model settings
         self.settings.setValue(SETTINGS_MODEL, self.model_dropdown.currentText())
         self.settings.setValue(SETTINGS_DEVICE, self.device_dropdown.currentText())
         self.settings.setValue(SETTINGS_QUANTIZATION, self.quantization_dropdown.currentText())
         self.settings.setValue(SETTINGS_TASK_MODE, self.task_mode)
 
-        # Save clipboard settings
         self.settings.setValue(SETTINGS_APPEND_MODE, self.append_checkbox.isChecked())
         self.settings.setValue(SETTINGS_CLIPBOARD_VISIBLE, self._clipboard_visible)
         self.settings.setValue(SETTINGS_CLIPBOARD_ALWAYS_ON_TOP, self.clipboard_window.is_always_on_top())
         self.settings.setValue(SETTINGS_CLIPBOARD_DOCKED, self.clipboard_window.is_docked())
 
-        # Save clipboard geometry if undocked
         if not self.clipboard_window.is_docked():
             self.settings.setValue(SETTINGS_CLIPBOARD_GEOMETRY, self.clipboard_window.saveGeometry())
 
@@ -302,7 +276,6 @@ class MainWindow(QMainWindow):
         logger.debug("State saved successfully")
 
     def _center_on_screen(self) -> None:
-        """Center the window on the primary screen."""
         if screen := QApplication.primaryScreen():
             screen_geometry = screen.availableGeometry()
             x = (screen_geometry.width() - self.width()) // 2 + screen_geometry.x()
@@ -310,7 +283,6 @@ class MainWindow(QMainWindow):
             self.move(x, y)
 
     def _on_clipboard_always_on_top_changed(self, value: bool) -> None:
-        """Handle clipboard always-on-top change."""
         self.settings.setValue(SETTINGS_CLIPBOARD_ALWAYS_ON_TOP, value)
 
     def _setup_connections(self) -> None:
@@ -325,6 +297,7 @@ class MainWindow(QMainWindow):
         self.controller.text_ready_signal.connect(self._on_transcription_ready)
         self.controller.model_loaded_signal.connect(self._on_model_loaded_success)
         self.controller.error_occurred.connect(self._show_error_dialog)
+        self.controller.transcription_cancelled_signal.connect(self._on_transcription_cancelled)
 
     def _build_ui(self) -> None:
         central = QWidget(self)
@@ -367,6 +340,13 @@ class MainWindow(QMainWindow):
         self.transcribe_file_button.clicked.connect(self._select_and_transcribe_file)
         buttons_row.addWidget(self.transcribe_file_button, 1)
         self._register_toggleable_widget(self.transcribe_file_button)
+
+        self.cancel_button = QPushButton("Cancel")
+        self.cancel_button.setObjectName("cancelButton")
+        self.cancel_button.setToolTip("Cancel the current transcription")
+        self.cancel_button.setVisible(False)
+        self.cancel_button.clicked.connect(self._cancel_transcription)
+        buttons_row.addWidget(self.cancel_button)
 
         layout.addLayout(buttons_row)
 
@@ -534,6 +514,15 @@ class MainWindow(QMainWindow):
             self.record_button.setText("Start Recording")
         update_button_property(self.record_button, "recording", self.is_recording)
 
+    @Slot()
+    def _cancel_transcription(self) -> None:
+        self.controller.cancel_transcription()
+        self.cancel_button.setEnabled(False)
+
+    @Slot()
+    def _on_transcription_cancelled(self) -> None:
+        self.cancel_button.setEnabled(True)
+
     def _is_supported_audio_file(self, path: str) -> bool:
         try:
             return Path(path).suffix.lower() in SUPPORTED_AUDIO_EXTENSIONS
@@ -625,6 +614,9 @@ class MainWindow(QMainWindow):
     def set_widgets_enabled(self, enabled: bool) -> None:
         for widget in self._toggleable_widgets:
             widget.setEnabled(enabled)
+
+        self.cancel_button.setVisible(not enabled)
+        self.cancel_button.setEnabled(not enabled)
 
         self.translate_radio.setEnabled(enabled and ModelMetadata.supports_translation(self.model_dropdown.currentText()))
 
