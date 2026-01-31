@@ -22,4 +22,4 @@ python main.py
 ```
 
 ## ⚙️ Windows Installer
-> Download and run [```FasterWhisperTranscriber_Setup.exe```](https://github.com/BBC-Esq/Faster-Whisper-Transcriber/releases/download/latest/FasterWhisperTranscriber_Setup.exe).
+> Download and run [```FasterWhisperTranscriber_Setup.exe```](https://github.com/BBC-Esq/Faster-Whisper-Transcriber/releases/latest/download/FasterWhisperTranscriber_Setup.exe).
