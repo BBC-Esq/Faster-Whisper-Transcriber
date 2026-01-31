@@ -1,6 +1,6 @@
 <div align="center">
-
-<img width="768" height="189" alt="splash" src="https://github.com/user-attachments/assets/d4ab1967-7db7-44b5-ab10-0479ee317204" />
+  
+<img width="768" height="193" alt="splash" src="https://github.com/user-attachments/assets/f601267a-541a-4fe7-afc2-36921a43dd5e" />
 
 ### 🎤 **Record & Transcribe** &nbsp;&nbsp; 📁 **Transcribe Files** &nbsp;&nbsp; ⚡ **GPU Accelerated**
 ### Requires [Python 3.11](https://www.python.org/downloads/release/python-3119/), [3.12](https://www.python.org/downloads/release/python-31210/) or [3.13](https://www.python.org/downloads/release/python-31311/)<br>
