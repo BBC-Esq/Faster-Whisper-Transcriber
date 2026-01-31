@@ -669,13 +669,30 @@ class MainWindow(QMainWindow):
         self._sync_clipboard_position()
 
     def closeEvent(self, event):
-        # Save state before closing
-        self._save_state()
+        import time
 
+        logger.info("Close event started")
+
+        t0 = time.perf_counter()
+        self._save_state()
+        logger.info(f"_save_state took {time.perf_counter() - t0:.3f}s")
+
+        t0 = time.perf_counter()
         self._save_config("show_clipboard_window", self._clipboard_visible)
+        logger.info(f"_save_config took {time.perf_counter() - t0:.3f}s")
+
+        t0 = time.perf_counter()
         self.clipboard_window.close()
+        logger.info(f"clipboard_window.close took {time.perf_counter() - t0:.3f}s")
+
+        t0 = time.perf_counter()
         self.controller.stop_all_threads()
+        logger.info(f"stop_all_threads took {time.perf_counter() - t0:.3f}s")
+
+        t0 = time.perf_counter()
         if hasattr(self, "global_hotkey"):
             self.global_hotkey.stop()
+        logger.info(f"global_hotkey.stop took {time.perf_counter() - t0:.3f}s")
+
         logger.info("Application closing")
         super().closeEvent(event)
