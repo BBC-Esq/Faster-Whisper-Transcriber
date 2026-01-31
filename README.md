@@ -2,12 +2,10 @@
 
 <img width="768" height="189" alt="splash" src="https://github.com/user-attachments/assets/d4ab1967-7db7-44b5-ab10-0479ee317204" />
 
-### 🎤 **Record & Transcribe** &nbsp;&nbsp; 📁 **Transcribe Files** &nbsp;&nbsp; ⚡ **GPU Accelerated**
+### 🎤 **Record & Transcribe** &nbsp;&nbsp; 📁 **Transcribe Files** &nbsp;&nbsp; ⚡ **GPU Accelerated**<br>
+### Requires [Python 3.11](https://www.python.org/downloads/release/python-3119/), [3.12](https://www.python.org/downloads/release/python-31210/) or [3.13](https://www.python.org/downloads/release/python-31311/)<br>
 
 </div>
-
-> [!IMPORTANT]
-> ### Requires [Python 3.11](https://www.python.org/downloads/release/python-3119/), [3.12](https://www.python.org/downloads/release/python-31210/) or [3.13](https://www.python.org/downloads/release/python-31311/)
 
 <img width="795" height="309" alt="image" src="https://github.com/user-attachments/assets/8a3dce7f-6cfa-4c3a-9572-ffc3a6ca9843" /><br>
 
