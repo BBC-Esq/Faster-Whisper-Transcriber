@@ -23,7 +23,3 @@ python main.py
 
 ## ⚙️ Windows Installer
 > Download and run ```FasterWhisperTranscriber_Setup.exe``` from the latest release.
-
-## ✨ Bonus Batch File Transcriber
-> Download and run ```FasterWhisperBatchFileTranscriber_Setup.exe``` from the latest release.
-<img width="751" height="448" alt="image" src="https://github.com/user-attachments/assets/4c7bf16e-ba9a-4d4d-afad-679d34586f59" />
