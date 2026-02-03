@@ -348,7 +348,7 @@ class MainWindow(QMainWindow):
         mode_row = QHBoxLayout()
         mode_row.setSpacing(8)
 
-        mode_label = QLabel("Mode")
+        mode_label = QLabel("Mode:")
         mode_label.setMinimumWidth(48)
         mode_row.addWidget(mode_label)
 
@@ -361,7 +361,7 @@ class MainWindow(QMainWindow):
 
         mode_row.addStretch(1)
 
-        self.transcribe_file_button = QPushButton("Transcribe Audio File")
+        self.transcribe_file_button = QPushButton("Transcribe File")
         self.transcribe_file_button.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.transcribe_file_button.setToolTip("Select an audio file to transcribe")
         self.transcribe_file_button.clicked.connect(self._select_and_transcribe_file)
