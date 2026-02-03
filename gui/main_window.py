@@ -191,10 +191,10 @@ class MainWindow(QMainWindow):
         if geometry and isinstance(geometry, QByteArray):
             if not self.restoreGeometry(geometry):
                 logger.warning("Failed to restore main window geometry, using defaults")
-                self.resize(425, 280)
+                self.resize(435, 280)
                 self._center_on_screen()
         else:
-            self.resize(425, 280)
+            self.resize(435, 280)
             self._center_on_screen()
 
         saved_model = self.settings.value(SETTINGS_MODEL, self.DEFAULTS["model"])
@@ -315,8 +315,8 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("Ready")
         self.statusBar().setSizeGripEnabled(True)
 
-        self.resize(425, 280)
-        self.setMinimumSize(425, 280)
+        self.resize(435, 280)
+        self.setMinimumSize(435, 280)
         self.setWindowFlag(Qt.WindowStaysOnTopHint)
 
     def _build_actions_group(self) -> QGroupBox:
