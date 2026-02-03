@@ -13,7 +13,6 @@ from PySide6.QtWidgets import (
     QLabel,
     QComboBox,
     QGroupBox,
-    QRadioButton,
     QMessageBox,
     QFileDialog,
     QFormLayout,
@@ -214,9 +213,10 @@ class MainWindow(QMainWindow):
         self.quantization_dropdown.setCurrentText(quantization)
 
         self.task_mode = task_mode
-        self.transcribe_radio.setChecked(task_mode == "transcribe")
-        self.translate_radio.setChecked(task_mode != "transcribe")
         self._update_translation_availability(model)
+        self.task_combo.blockSignals(True)
+        self.task_combo.setCurrentText(task_mode.capitalize())
+        self.task_combo.blockSignals(False)
 
         append_mode = self.settings.value(SETTINGS_APPEND_MODE, self.DEFAULTS["append_mode"], type=bool)
         self.append_checkbox.blockSignals(True)
@@ -289,10 +289,12 @@ class MainWindow(QMainWindow):
         self.device_dropdown.currentTextChanged.connect(self.update_quantization_options)
         self.model_dropdown.currentTextChanged.connect(self.update_quantization_options)
         self.model_dropdown.currentTextChanged.connect(self._on_dropdown_changed)
+        self.model_dropdown.currentTextChanged.connect(self._update_translation_availability)
         self.quantization_dropdown.currentTextChanged.connect(self._on_dropdown_changed)
         self.device_dropdown.currentTextChanged.connect(self._on_dropdown_changed)
 
         self.controller.update_status_signal.connect(self.statusBar().showMessage)
+        self.controller.update_button_signal.connect(self._on_button_text_update)
         self.controller.enable_widgets_signal.connect(self.set_widgets_enabled)
         self.controller.text_ready_signal.connect(self._on_transcription_ready)
         self.controller.model_loaded_signal.connect(self._on_model_loaded_success)
@@ -331,15 +333,8 @@ class MainWindow(QMainWindow):
         self.record_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.record_button.setToolTip("Click or press F9 to toggle recording")
         self.record_button.clicked.connect(self._toggle_recording)
-        buttons_row.addWidget(self.record_button, 2)
+        buttons_row.addWidget(self.record_button, 1)
         self._register_toggleable_widget(self.record_button)
-
-        self.transcribe_file_button = QPushButton("Transcribe Audio File")
-        self.transcribe_file_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self.transcribe_file_button.setToolTip("Select an audio file to transcribe")
-        self.transcribe_file_button.clicked.connect(self._select_and_transcribe_file)
-        buttons_row.addWidget(self.transcribe_file_button, 1)
-        self._register_toggleable_widget(self.transcribe_file_button)
 
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setObjectName("cancelButton")
@@ -357,14 +352,21 @@ class MainWindow(QMainWindow):
         mode_label.setMinimumWidth(48)
         mode_row.addWidget(mode_label)
 
-        self.transcribe_radio = QRadioButton("Transcribe")
-        self.translate_radio = QRadioButton("Translate")
-        self.transcribe_radio.toggled.connect(self._on_task_mode_changed)
-        self._register_toggleable_widget(self.transcribe_radio)
+        self.task_combo = QComboBox()
+        self.task_combo.addItems(["Transcribe", "Translate"])
+        self.task_combo.setToolTip("Choose transcription or translation mode")
+        self.task_combo.currentTextChanged.connect(self._on_task_mode_changed)
+        self._register_toggleable_widget(self.task_combo)
+        mode_row.addWidget(self.task_combo)
 
-        mode_row.addWidget(self.transcribe_radio)
-        mode_row.addWidget(self.translate_radio)
         mode_row.addStretch(1)
+
+        self.transcribe_file_button = QPushButton("Transcribe Audio File")
+        self.transcribe_file_button.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.transcribe_file_button.setToolTip("Select an audio file to transcribe")
+        self.transcribe_file_button.clicked.connect(self._select_and_transcribe_file)
+        mode_row.addWidget(self.transcribe_file_button)
+        self._register_toggleable_widget(self.transcribe_file_button)
 
         self.clipboard_button = QPushButton("Show Clipboard")
         self.clipboard_button.setObjectName("clipboardButton")
@@ -454,14 +456,23 @@ class MainWindow(QMainWindow):
 
     def _update_translation_availability(self, model_name: str) -> None:
         can_translate = ModelMetadata.supports_translation(model_name)
-        self.translate_radio.setEnabled(can_translate)
-        self.translate_radio.setToolTip("" if can_translate else "Translation not supported by the selected model")
+        self.task_combo.blockSignals(True)
+        current = self.task_combo.currentText()
+        self.task_combo.clear()
+        if can_translate:
+            self.task_combo.addItems(["Transcribe", "Translate"])
+            self.task_combo.setCurrentText(current if current in ["Transcribe", "Translate"] else "Transcribe")
+        else:
+            self.task_combo.addItems(["Transcribe"])
+            if current == "Translate":
+                self.task_mode = "transcribe"
+                self._save_config("task_mode", self.task_mode)
+                self.controller.set_task_mode(self.task_mode)
+        self.task_combo.blockSignals(False)
 
-        if not can_translate and self.translate_radio.isChecked():
-            self.transcribe_radio.setChecked(True)
-            self.task_mode = "transcribe"
-            self._save_config("task_mode", self.task_mode)
-            self.controller.set_task_mode(self.task_mode)
+    @Slot(str)
+    def _on_button_text_update(self, text: str) -> None:
+        self.record_button.setText(text)
 
     @Slot()
     def _on_clipboard_closed(self) -> None:
@@ -492,7 +503,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_task_mode_changed(self) -> None:
-        self.task_mode = "transcribe" if self.transcribe_radio.isChecked() else "translate"
+        self.task_mode = self.task_combo.currentText().lower()
         self._save_config("task_mode", self.task_mode)
         self.controller.set_task_mode(self.task_mode)
 
@@ -508,10 +519,10 @@ class MainWindow(QMainWindow):
         self.is_recording = not self.is_recording
         if self.is_recording:
             self.controller.start_recording()
-            self.record_button.setText("Click to Stop and Transcribe")
+            self.record_button.setText("Recording... Click to Stop and Transcribe")
         else:
             self.controller.stop_recording()
-            self.record_button.setText("Start Recording")
+            self.record_button.setText("Processing...")
         update_button_property(self.record_button, "recording", self.is_recording)
 
     @Slot()
@@ -583,7 +594,6 @@ class MainWindow(QMainWindow):
 
         if self.is_recording:
             self.is_recording = False
-            self.record_button.setText("Start Recording")
             update_button_property(self.record_button, "recording", False)
 
     @Slot()
@@ -618,11 +628,8 @@ class MainWindow(QMainWindow):
         self.cancel_button.setVisible(not enabled)
         self.cancel_button.setEnabled(not enabled)
 
-        self.translate_radio.setEnabled(enabled and ModelMetadata.supports_translation(self.model_dropdown.currentText()))
-
         if not enabled and self.is_recording:
             self.is_recording = False
-            self.record_button.setText("Start Recording")
             update_button_property(self.record_button, "recording", False)
 
     def _extract_first_supported_drop(self, event) -> str | None:

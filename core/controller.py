@@ -18,6 +18,7 @@ logger = get_logger(__name__)
 
 class TranscriberController(QObject):
     update_status_signal = Signal(str)
+    update_button_signal = Signal(str)
     enable_widgets_signal = Signal(bool)
     text_ready_signal = Signal(str)
     model_loaded_signal = Signal(str, str, str)
@@ -63,13 +64,13 @@ class TranscriberController(QObject):
         self.model_manager.model_error.connect(self._on_model_error)
 
         self.audio_manager.recording_started.connect(
-            lambda: self.update_status_signal.emit("Recording...")
+            lambda: self.update_button_signal.emit("Recording... Click to Stop and Transcribe")
         )
         self.audio_manager.audio_ready.connect(self._on_audio_ready)
         self.audio_manager.audio_error.connect(self._on_audio_error)
 
         self.transcription_service.transcription_started.connect(
-            lambda: self.update_status_signal.emit("Transcribing...")
+            lambda: self.update_button_signal.emit("Transcribing...")
         )
         self.transcription_service.transcription_progress.connect(self._on_transcription_progress)
         self.transcription_service.transcription_completed.connect(self._on_transcription_completed)
@@ -83,14 +84,14 @@ class TranscriberController(QObject):
 
     def start_recording(self) -> None:
         if not self.audio_manager.start_recording():
-            self.update_status_signal.emit("Already recording")
+            self.update_button_signal.emit("Already recording")
 
     def stop_recording(self) -> None:
         self.audio_manager.stop_recording()
 
     def cancel_transcription(self) -> bool:
         if self.transcription_service.cancel_transcription():
-            self.update_status_signal.emit("Cancelling...")
+            self.update_button_signal.emit("Cancelling...")
             return True
         return False
 
@@ -101,7 +102,7 @@ class TranscriberController(QObject):
         model, model_version = self.model_manager.get_model()
         if model and model_version:
             self.enable_widgets_signal.emit(False)
-            self.update_status_signal.emit(f"Transcribing {Path(file_path).name}...")
+            self.update_button_signal.emit(f"Transcribing {Path(file_path).name}...")
             self.transcription_service.transcribe_file(
                 model,
                 model_version,
@@ -157,9 +158,9 @@ class TranscriberController(QObject):
     @Slot(int, int, float)
     def _on_transcription_progress(self, segment_num: int, total_segments: int, percent: float) -> None:
         if percent >= 0:
-            self.update_status_signal.emit(f"Transcribing... {percent:.0f}% (segment {segment_num})")
+            self.update_button_signal.emit(f"Transcribing... {percent:.0f}%")
         else:
-            self.update_status_signal.emit(f"Transcribing... segment {segment_num}")
+            self.update_button_signal.emit(f"Transcribing... segment {segment_num}")
 
     @Slot(str)
     def _on_transcription_completed(self, text: str) -> None:
@@ -168,19 +169,19 @@ class TranscriberController(QObject):
             app.clipboard().setText(text)
 
         self.text_ready_signal.emit(text)
-        self.update_status_signal.emit("Done")
+        self.update_button_signal.emit("Transcription Done...Click to Record Again")
         self.enable_widgets_signal.emit(True)
 
     @Slot(str)
     def _on_transcription_error(self, error: str) -> None:
         logger.error(f"Transcription error: {error}")
-        self.update_status_signal.emit("Transcription failed")
+        self.update_button_signal.emit("Transcription Failed---Click to Record Again")
         self.enable_widgets_signal.emit(True)
         self.error_occurred.emit("Transcription Error", error)
 
     @Slot()
     def _on_transcription_cancelled(self) -> None:
-        self.update_status_signal.emit("Transcription cancelled")
+        self.update_button_signal.emit("Transcription Cancelled...Click to Record Again")
         self.enable_widgets_signal.emit(True)
         self.transcription_cancelled_signal.emit()
 
