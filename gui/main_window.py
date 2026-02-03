@@ -147,7 +147,7 @@ class MainWindow(QMainWindow):
                 config = config_manager.load_config()
                 self.supported_quantizations = config.get("supported_quantizations", {"cpu": [], "cuda": []})
         except Exception as e:
-            logger.error(f"Failed to load quantization support: {e}")
+            logger.error(f"Failed to load precision support: {e}")
             self.supported_quantizations = {"cpu": ["float32"], "cuda": []}
 
     def _validate_model(self, model_name: str) -> str:
@@ -171,7 +171,7 @@ class MainWindow(QMainWindow):
         if quantization in available:
             return quantization
         if available:
-            logger.warning(f"Quantization '{quantization}' not available for {model_name}/{device}, using {available[0]}")
+            logger.warning(f"Precision '{quantization}' not available for {model_name}/{device}, using {available[0]}")
             return available[0]
         logger.warning(f"No quantizations available for {model_name}/{device}, using float32")
         return "float32"
@@ -413,7 +413,7 @@ class MainWindow(QMainWindow):
         self._register_toggleable_widget(self.device_dropdown)
 
         self.quantization_dropdown = QComboBox()
-        self.quantization_dropdown.setToolTip("Choose the compute type (quantization)")
+        self.quantization_dropdown.setToolTip("Choose (quantization) precision")
         self._register_toggleable_widget(self.quantization_dropdown)
 
         self.append_checkbox = QCheckBox("Append")
@@ -424,7 +424,7 @@ class MainWindow(QMainWindow):
         row = QHBoxLayout()
         row.setSpacing(10)
 
-        for label, widget in [("Device", self.device_dropdown), ("Quantization", self.quantization_dropdown)]:
+        for label, widget in [("Device", self.device_dropdown), ("Precision", self.quantization_dropdown)]:
             form = QFormLayout()
             form.setContentsMargins(0, 0, 0, 0)
             form.setHorizontalSpacing(10)
