@@ -10,9 +10,9 @@ QMainWindow {
 
 QGroupBox {
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 10px;
-    margin-top: 9px;
-    padding: 8px;
+    border-radius: 4px;
+    margin-top: 2px;
+    padding: 6px;
     color: rgba(255, 255, 255, 0.92);
     background: rgba(255, 255, 255, 0.03);
 }
@@ -20,7 +20,7 @@ QGroupBox {
 QGroupBox::title {
     subcontrol-origin: margin;
     left: 10px;
-    padding: 0 6px;
+    padding: 0 4px;
     color: rgba(255, 255, 255, 0.85);
 }
 
@@ -30,20 +30,20 @@ QLabel {
 
 QComboBox, QLineEdit {
     border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 10px;
-    padding: 5px 9px;
+    border-radius: 4px;
+    padding: 4px 10px;
     background: rgba(255, 255, 255, 0.05);
     color: rgba(255, 255, 255, 0.95);
 }
 
 QComboBox::drop-down {
     border: none;
-    width: 24px;
+    width: 1px;
 }
 
 QComboBox QAbstractItemView {
     border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 10px;
+    border-radius: 4px;
     background: #141821;
     color: rgba(255, 255, 255, 0.95);
     selection-background-color: rgba(89, 160, 255, 0.25);
@@ -51,8 +51,8 @@ QComboBox QAbstractItemView {
 
 QPushButton {
     border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 10px;
-    padding: 6px 10px;
+    border-radius: 4px;
+    padding: 4px 8px;
     background: rgba(255, 255, 255, 0.06);
     color: rgba(255, 255, 255, 0.95);
 }
@@ -123,7 +123,7 @@ QRadioButton {
 
 QTextEdit {
     border: 1px solid rgba(255, 255, 255, 0.10);
-    border-radius: 10px;
+    border-radius: 4px;
     padding: 10px;
     background: rgba(255, 255, 255, 0.04);
     color: rgba(255, 255, 255, 0.95);
@@ -132,7 +132,8 @@ QTextEdit {
 
 QStatusBar {
     background: rgba(255, 255, 255, 0.03);
-    color: rgba(255, 255, 255, 0.85);
+    color: rgba(34, 197, 94, 0.95);
+    font-weight: 600;
 }
 
 QMessageBox {

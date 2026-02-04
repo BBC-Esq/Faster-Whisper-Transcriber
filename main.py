@@ -19,6 +19,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 from core.logging_config import setup_logging, get_logger
 from core.temp_file_manager import temp_file_manager
 from gui.main_window import MainWindow
+from gui.styles import APP_STYLESHEET
 
 
 def _install_sigint_handler() -> None:
@@ -67,6 +68,7 @@ def run_gui() -> None:
 
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
+    app.setStyleSheet(APP_STYLESHEET)
     _install_sigint_handler()
 
     cuda_ok = _check_cuda_available()

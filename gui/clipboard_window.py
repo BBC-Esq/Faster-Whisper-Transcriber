@@ -26,7 +26,7 @@ class ClipboardSideWindow(QWidget):
         self._side: str = "right"
         self._last_host_rect: QRect | None = None
         self._desired_width = width
-        self._default_height = 280
+        self._default_height = 210
 
         self.setWindowTitle("Clipboard")
         self._apply_window_flags()
@@ -78,7 +78,7 @@ class ClipboardSideWindow(QWidget):
 
         layout.addLayout(bottom_bar)
 
-        self.setMinimumSize(285, 200)
+        self.setMinimumSize(285, 210)
         self.resize(self._desired_width, self._default_height)
         self.hide()
 

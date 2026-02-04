@@ -28,7 +28,7 @@ from core.controller import TranscriberController
 from core.models.metadata import ModelMetadata
 from core.hotkeys import GlobalHotkey
 from config.manager import config_manager
-from gui.styles import APP_STYLESHEET, update_button_property
+from gui.styles import update_button_property
 from gui.clipboard_window import ClipboardSideWindow
 from core.logging_config import get_logger
 
@@ -56,16 +56,16 @@ class BatchSizeDialog(QDialog):
         super().__init__(parent)
         self.setWindowTitle("Batch Size")
         self.setModal(True)
-        self.setFixedWidth(360)
+        self.setFixedWidth(340)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(14, 14, 14, 14)
-        layout.setSpacing(10)
+        layout.setContentsMargins(10, 10, 10, 10)
+        layout.setSpacing(5)
 
         layout.addWidget(QLabel("Set batch size for file transcription.\nUse 1 for non-batched transcription."))
 
         row = QHBoxLayout()
-        row.setSpacing(10)
+        row.setSpacing(5)
         row.addWidget(QLabel("Batch size"))
         self.spin = QSpinBox()
         self.spin.setRange(1, 256)
@@ -100,7 +100,7 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("Faster Whisper Transcriber")
-        self.setStyleSheet(APP_STYLESHEET)
+        # self.setStyleSheet(APP_STYLESHEET)
 
         self.settings = QSettings("FasterWhisperTranscriber", "Transcriber")
 
@@ -113,7 +113,7 @@ class MainWindow(QMainWindow):
         self._clipboard_visible = False
         self._toggleable_widgets: list[QWidget] = []
 
-        self.clipboard_window = ClipboardSideWindow(None, width=360)
+        self.clipboard_window = ClipboardSideWindow(None, width=340)
         self.clipboard_window.user_closed.connect(self._on_clipboard_closed)
         self.clipboard_window.docked_changed.connect(lambda d: logger.debug(f"Clipboard docked: {d}"))
         self.clipboard_window.always_on_top_changed.connect(self._on_clipboard_always_on_top_changed)
@@ -191,10 +191,10 @@ class MainWindow(QMainWindow):
         if geometry and isinstance(geometry, QByteArray):
             if not self.restoreGeometry(geometry):
                 logger.warning("Failed to restore main window geometry, using defaults")
-                self.resize(435, 280)
+                self.resize(435, 210)
                 self._center_on_screen()
         else:
-            self.resize(435, 280)
+            self.resize(435, 210)
             self._center_on_screen()
 
         saved_model = self.settings.value(SETTINGS_MODEL, self.DEFAULTS["model"])
@@ -215,7 +215,7 @@ class MainWindow(QMainWindow):
         self.task_mode = task_mode
         self._update_translation_availability(model)
         self.task_combo.blockSignals(True)
-        self.task_combo.setCurrentText(task_mode.capitalize())
+        self.task_combo.setCurrentText(f"{task_mode.capitalize()} Mode")
         self.task_combo.blockSignals(False)
 
         append_mode = self.settings.value(SETTINGS_APPEND_MODE, self.DEFAULTS["append_mode"], type=bool)
@@ -232,7 +232,7 @@ class MainWindow(QMainWindow):
 
         if self._clipboard_visible:
             if clipboard_docked:
-                self.clipboard_window.show_docked(self._host_rect_global(), gap=10, animate=False)
+                self.clipboard_window.show_docked(self._host_rect_global(), gap=5, animate=False)
             else:
                 clip_geometry = self.settings.value(SETTINGS_CLIPBOARD_GEOMETRY)
                 if clip_geometry and isinstance(clip_geometry, QByteArray):
@@ -240,7 +240,7 @@ class MainWindow(QMainWindow):
                     self.clipboard_window.restoreGeometry(clip_geometry)
                     self.clipboard_window.show()
                 else:
-                    self.clipboard_window.show_docked(self._host_rect_global(), gap=10, animate=False)
+                    self.clipboard_window.show_docked(self._host_rect_global(), gap=5, animate=False)
 
         self._update_clipboard_button_text()
 
@@ -311,12 +311,13 @@ class MainWindow(QMainWindow):
 
         root.addWidget(self._build_actions_group())
         root.addWidget(self._build_settings_group())
+        root.addStretch(1)
 
         self.statusBar().showMessage("Ready")
         self.statusBar().setSizeGripEnabled(True)
 
-        self.resize(435, 280)
-        self.setMinimumSize(435, 280)
+        self.resize(435, 210)
+        self.setMinimumSize(435, 210)
         self.setWindowFlag(Qt.WindowStaysOnTopHint)
 
     def _build_actions_group(self) -> QGroupBox:
@@ -348,18 +349,14 @@ class MainWindow(QMainWindow):
         mode_row = QHBoxLayout()
         mode_row.setSpacing(8)
 
-        mode_label = QLabel("Mode:")
-        mode_label.setMinimumWidth(48)
-        mode_row.addWidget(mode_label)
-
         self.task_combo = QComboBox()
-        self.task_combo.addItems(["Transcribe", "Translate"])
+        self.task_combo.addItems(["Transcribe Mode", "Translate Mode"])
         self.task_combo.setToolTip("Choose transcription or translation mode")
         self.task_combo.currentTextChanged.connect(self._on_task_mode_changed)
         self._register_toggleable_widget(self.task_combo)
         mode_row.addWidget(self.task_combo)
 
-        mode_row.addStretch(1)
+        # mode_row.addStretch(1)
 
         self.transcribe_file_button = QPushButton("Transcribe File")
         self.transcribe_file_button.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
@@ -371,7 +368,7 @@ class MainWindow(QMainWindow):
         self.clipboard_button = QPushButton("Show Clipboard")
         self.clipboard_button.setObjectName("clipboardButton")
         self.clipboard_button.setToolTip("Show or hide the clipboard panel")
-        self.clipboard_button.setMinimumWidth(130)
+        self.clipboard_button.setMinimumWidth(120)
         self.clipboard_button.clicked.connect(self._toggle_clipboard)
         mode_row.addWidget(self.clipboard_button)
         self._register_toggleable_widget(self.clipboard_button)
@@ -381,66 +378,74 @@ class MainWindow(QMainWindow):
 
     def _build_settings_group(self) -> QGroupBox:
         group = QGroupBox("")
-        layout = QVBoxLayout(group)
-        layout.setContentsMargins(2, 2, 2, 2)
-        layout.setSpacing(8)
+        outer = QHBoxLayout(group)
+        outer.setContentsMargins(2, 2, 2, 2)
+        outer.setSpacing(8)
+
+        self.update_model_btn = QPushButton("Update\nSettings")
+        self.update_model_btn.setObjectName("updateButton")
+        self.update_model_btn.setToolTip("Load the selected model and settings")
+        self.update_model_btn.clicked.connect(self._update_model)
+        self.update_model_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
+        outer.addWidget(self.update_model_btn)
+        self._register_toggleable_widget(self.update_model_btn)
+
+        right_side = QVBoxLayout()
+        right_side.setSpacing(6)
+
+        # Row 1: Model + Device
+        top_row = QHBoxLayout()
+        top_row.setSpacing(10)
 
         self.model_dropdown = QComboBox()
         self.model_dropdown.addItems(ModelMetadata.get_all_model_names())
         self.model_dropdown.setToolTip("Choose a Whisper model")
         self._register_toggleable_widget(self.model_dropdown)
 
-        self.loaded_model_label = QLabel("Not loaded")
-        self.loaded_model_label.setAlignment(Qt.AlignVCenter | Qt.AlignRight)
-        self.loaded_model_label.setToolTip("Currently loaded model")
-        self.loaded_model_label.setStyleSheet("color: rgba(34, 197, 94, 0.95); font-weight: 600;")
-
-        model_row = QHBoxLayout()
-        model_row.setSpacing(8)
-        model_row.addWidget(self.model_dropdown, 1)
-        model_row.addWidget(self.loaded_model_label, 0)
-
-        form_top = QFormLayout()
-        form_top.setContentsMargins(0, 0, 0, 0)
-        form_top.setHorizontalSpacing(10)
-        form_top.setVerticalSpacing(6)
-        form_top.addRow("Model", model_row)
-        layout.addLayout(form_top)
+        model_form = QFormLayout()
+        model_form.setContentsMargins(0, 0, 0, 0)
+        model_form.setHorizontalSpacing(10)
+        model_form.setVerticalSpacing(6)
+        model_form.addRow("Model", self.model_dropdown)
+        top_row.addLayout(model_form, 1)
 
         self.device_dropdown = QComboBox()
         self.device_dropdown.addItems(["cpu", "cuda"] if self.cuda_available else ["cpu"])
         self.device_dropdown.setToolTip("Choose the compute device")
         self._register_toggleable_widget(self.device_dropdown)
 
+        device_form = QFormLayout()
+        device_form.setContentsMargins(0, 0, 0, 0)
+        device_form.setHorizontalSpacing(10)
+        device_form.setVerticalSpacing(6)
+        device_form.addRow("Device", self.device_dropdown)
+        top_row.addLayout(device_form, 1)
+
+        right_side.addLayout(top_row)
+
+        # Row 2: Precision + Append
+        bottom_row = QHBoxLayout()
+        bottom_row.setSpacing(10)
+
         self.quantization_dropdown = QComboBox()
         self.quantization_dropdown.setToolTip("Choose (quantization) precision")
         self._register_toggleable_widget(self.quantization_dropdown)
+
+        precision_form = QFormLayout()
+        precision_form.setContentsMargins(0, 0, 0, 0)
+        precision_form.setHorizontalSpacing(10)
+        precision_form.setVerticalSpacing(6)
+        precision_form.addRow("Precision", self.quantization_dropdown)
+        bottom_row.addLayout(precision_form, 1)
 
         self.append_checkbox = QCheckBox("Append")
         self.append_checkbox.setToolTip("Append new transcriptions instead of replacing")
         self.append_checkbox.toggled.connect(self._on_append_toggled)
         self._register_toggleable_widget(self.append_checkbox)
+        bottom_row.addWidget(self.append_checkbox, 0)
 
-        row = QHBoxLayout()
-        row.setSpacing(10)
-
-        for label, widget in [("Device", self.device_dropdown), ("Precision", self.quantization_dropdown)]:
-            form = QFormLayout()
-            form.setContentsMargins(0, 0, 0, 0)
-            form.setHorizontalSpacing(10)
-            form.setVerticalSpacing(6)
-            form.addRow(label, widget)
-            row.addLayout(form, 1)
-
-        row.addWidget(self.append_checkbox, 0)
-        layout.addLayout(row)
-
-        self.update_model_btn = QPushButton("Update Settings")
-        self.update_model_btn.setObjectName("updateButton")
-        self.update_model_btn.setToolTip("Load the selected model and settings")
-        self.update_model_btn.clicked.connect(self._update_model)
-        layout.addWidget(self.update_model_btn)
-        self._register_toggleable_widget(self.update_model_btn)
+        right_side.addLayout(bottom_row)
+        outer.addLayout(right_side, 1)
 
         return group
 
@@ -460,11 +465,11 @@ class MainWindow(QMainWindow):
         current = self.task_combo.currentText()
         self.task_combo.clear()
         if can_translate:
-            self.task_combo.addItems(["Transcribe", "Translate"])
-            self.task_combo.setCurrentText(current if current in ["Transcribe", "Translate"] else "Transcribe")
+            self.task_combo.addItems(["Transcribe Mode", "Translate Mode"])
+            self.task_combo.setCurrentText(current if current in ["Transcribe Mode", "Translate Mode"] else "Transcribe Mode")
         else:
-            self.task_combo.addItems(["Transcribe"])
-            if current == "Translate":
+            self.task_combo.addItems(["Transcribe Mode"])
+            if current == "Translate Mode":
                 self.task_mode = "transcribe"
                 self._save_config("task_mode", self.task_mode)
                 self.controller.set_task_mode(self.task_mode)
@@ -498,7 +503,7 @@ class MainWindow(QMainWindow):
             "device_type": self.device_dropdown.currentText(),
         }
         has_changes = current != self.loaded_model_settings
-        self.update_model_btn.setText("Reload Model to Apply Changes" if has_changes else "Update Settings")
+        self.update_model_btn.setText("Reload\nModel" if has_changes else "Update\nSettings")
         update_button_property(self.update_model_btn, "changed", has_changes)
 
     @Slot()
@@ -510,7 +515,6 @@ class MainWindow(QMainWindow):
     @Slot(str, str, str)
     def _on_model_loaded_success(self, model_name: str, quant: str, device: str) -> None:
         self.loaded_model_settings = {"model_name": model_name, "quantization_type": quant, "device_type": device}
-        self.loaded_model_label.setText(model_name)
         self._on_dropdown_changed()
         self._update_translation_availability(model_name)
 
@@ -613,7 +617,6 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _update_model(self) -> None:
-        self.loaded_model_label.setText("Loading...")
         self.controller.update_model(
             self.model_dropdown.currentText(),
             self.quantization_dropdown.currentText(),
