@@ -152,6 +152,7 @@ class ClipboardSideWindow(QWidget):
     def _stop_animation(self) -> None:
         if self._animation:
             self._animation.stop()
+            self._animation.deleteLater()
             self._animation = None
 
     def _begin_internal_move(self) -> None:

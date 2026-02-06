@@ -1,23 +1,31 @@
+import threading
+
 from core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+_nltk_lock = threading.Lock()
 _nltk_initialized = False
+
 
 def _ensure_nltk() -> bool:
     global _nltk_initialized
     if _nltk_initialized:
         return True
 
-    try:
-        import nltk
-        nltk.download('punkt', quiet=True)
-        nltk.download('punkt_tab', quiet=True)
-        _nltk_initialized = True
-        return True
-    except Exception as e:
-        logger.warning(f"Failed to initialize NLTK: {e}")
-        return False
+    with _nltk_lock:
+        if _nltk_initialized:
+            return True
+
+        try:
+            import nltk
+            nltk.download('punkt', quiet=True)
+            nltk.download('punkt_tab', quiet=True)
+            _nltk_initialized = True
+            return True
+        except Exception as e:
+            logger.warning(f"Failed to initialize NLTK: {e}")
+            return False
 
 
 def curate_text(text: str) -> str:

@@ -164,10 +164,6 @@ class TranscriberController(QObject):
 
     @Slot(str)
     def _on_transcription_completed(self, text: str) -> None:
-        app = QApplication.instance()
-        if app:
-            app.clipboard().setText(text)
-
         self.text_ready_signal.emit(text)
         self.update_button_signal.emit("Transcription Done...Click to Record Again")
         self.enable_widgets_signal.emit(True)

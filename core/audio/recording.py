@@ -44,7 +44,6 @@ class RecordingThread(QThread):
 
     @contextmanager
     def _audio_stream(self) -> Iterator[sd.RawInputStream]:
-        stream: sd.RawInputStream | None = None
         try:
             stream = sd.RawInputStream(
                 samplerate=self.samplerate,
@@ -61,12 +60,6 @@ class RecordingThread(QThread):
         except Exception as e:
             logger.error(f"Failed to create audio stream: {e}")
             raise AudioRecordingError(f"Failed to create audio stream: {e}") from e
-        finally:
-            if stream is not None:
-                try:
-                    stream.close()
-                except Exception as e:
-                    logger.warning(f"Error closing audio stream: {e}")
 
     def _audio_callback(self, indata, frames, time_info, status) -> None:
         if status:

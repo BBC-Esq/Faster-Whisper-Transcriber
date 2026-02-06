@@ -9,26 +9,13 @@ from core.logging_config import get_logger
 
 logger = get_logger(__name__)
 
+
 class TempFileManager:
 
-    _instance: "TempFileManager | None" = None
-    _lock = Lock()
-
-    def __new__(cls) -> "TempFileManager":
-        if cls._instance is None:
-            with cls._lock:
-                if cls._instance is None:
-                    cls._instance = super().__new__(cls)
-                    cls._instance._initialized = False
-        return cls._instance
-
     def __init__(self) -> None:
-        if self._initialized:
-            return
         self._files: Set[Path] = set()
         self._files_lock = Lock()
         atexit.register(self.cleanup_all)
-        self._initialized = True
 
     def create_temp_wav(self) -> Path:
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
@@ -44,8 +31,10 @@ class TempFileManager:
         path = Path(path)
 
         with self._files_lock:
-            if path in self._files:
-                self._files.discard(path)
+            if path not in self._files:
+                logger.warning(f"Attempted to release untracked temp file: {path}")
+                return False
+            self._files.discard(path)
 
         try:
             if path.exists():
@@ -69,5 +58,6 @@ class TempFileManager:
                     logger.debug(f"Cleanup: deleted {path}")
             except OSError as e:
                 logger.warning(f"Cleanup: failed to delete {path}: {e}")
+
 
 temp_file_manager = TempFileManager()

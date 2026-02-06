@@ -100,7 +100,6 @@ class MainWindow(QMainWindow):
         super().__init__()
 
         self.setWindowTitle("Faster Whisper Transcriber")
-        # self.setStyleSheet(APP_STYLESHEET)
 
         self.settings = QSettings("FasterWhisperTranscriber", "Transcriber")
 
@@ -356,8 +355,6 @@ class MainWindow(QMainWindow):
         self._register_toggleable_widget(self.task_combo)
         mode_row.addWidget(self.task_combo)
 
-        # mode_row.addStretch(1)
-
         self.transcribe_file_button = QPushButton("Transcribe File")
         self.transcribe_file_button.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
         self.transcribe_file_button.setToolTip("Select an audio file to transcribe")
@@ -393,7 +390,6 @@ class MainWindow(QMainWindow):
         right_side = QVBoxLayout()
         right_side.setSpacing(6)
 
-        # Row 1: Model + Device
         top_row = QHBoxLayout()
         top_row.setSpacing(10)
 
@@ -423,7 +419,6 @@ class MainWindow(QMainWindow):
 
         right_side.addLayout(top_row)
 
-        # Row 2: Precision + Append
         bottom_row = QHBoxLayout()
         bottom_row.setSpacing(10)
 
@@ -493,7 +488,10 @@ class MainWindow(QMainWindow):
     @Slot(str, str)
     def _show_error_dialog(self, title: str, message: str) -> None:
         logger.error(f"Error: {title} - {message}")
-        QMessageBox.warning(self, title, message)
+        if "model" in title.lower():
+            QMessageBox.critical(self, title, message)
+        else:
+            QMessageBox.warning(self, title, message)
 
     @Slot()
     def _on_dropdown_changed(self) -> None:
@@ -508,7 +506,7 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_task_mode_changed(self) -> None:
-        self.task_mode = self.task_combo.currentText().lower()
+        self.task_mode = "translate" if "Translate" in self.task_combo.currentText() else "transcribe"
         self._save_config("task_mode", self.task_mode)
         self.controller.set_task_mode(self.task_mode)
 
@@ -520,6 +518,12 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _toggle_recording(self) -> None:
+        if self.controller.is_transcribing():
+            return
+
+        if not self.record_button.isEnabled():
+            return
+
         self.is_recording = not self.is_recording
         if self.is_recording:
             self.controller.start_recording()
@@ -629,7 +633,7 @@ class MainWindow(QMainWindow):
             widget.setEnabled(enabled)
 
         self.cancel_button.setVisible(not enabled)
-        self.cancel_button.setEnabled(not enabled)
+        self.cancel_button.setEnabled(True)
 
         if not enabled and self.is_recording:
             self.is_recording = False
@@ -671,30 +675,14 @@ class MainWindow(QMainWindow):
         self._sync_clipboard_position()
 
     def closeEvent(self, event):
-        import time
+        logger.info("Application closing")
 
-        logger.info("Close event started")
-
-        t0 = time.perf_counter()
         self._save_state()
-        logger.info(f"_save_state took {time.perf_counter() - t0:.3f}s")
-
-        t0 = time.perf_counter()
         self._save_config("show_clipboard_window", self._clipboard_visible)
-        logger.info(f"_save_config took {time.perf_counter() - t0:.3f}s")
-
-        t0 = time.perf_counter()
         self.clipboard_window.close()
-        logger.info(f"clipboard_window.close took {time.perf_counter() - t0:.3f}s")
-
-        t0 = time.perf_counter()
         self.controller.stop_all_threads()
-        logger.info(f"stop_all_threads took {time.perf_counter() - t0:.3f}s")
 
-        t0 = time.perf_counter()
         if hasattr(self, "global_hotkey"):
             self.global_hotkey.stop()
-        logger.info(f"global_hotkey.stop took {time.perf_counter() - t0:.3f}s")
 
-        logger.info("Application closing")
         super().closeEvent(event)

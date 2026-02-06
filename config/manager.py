@@ -90,7 +90,8 @@ class ConfigManager:
             loaded_config = {}
 
         merged_config = copy.deepcopy(self.DEFAULT_CONFIG)
-        self._deep_update(merged_config, loaded_config)
+        filtered = {k: v for k, v in loaded_config.items() if k in self.DEFAULT_CONFIG}
+        self._deep_update(merged_config, filtered)
         self._validate_and_sanitize(merged_config)
 
         return merged_config

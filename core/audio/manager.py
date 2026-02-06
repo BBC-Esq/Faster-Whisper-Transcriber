@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QObject, Signal, Slot
@@ -23,7 +24,7 @@ class AudioManager(QObject):
         self.channels = channels
         self.dtype = dtype
         self._recording_thread: Optional[RecordingThread] = None
-        self._current_temp_file: Optional[str] = None
+        self._current_temp_file: Optional[Path] = None
 
     def start_recording(self) -> bool:
         if self._recording_thread and self._recording_thread.isRunning():
@@ -32,7 +33,7 @@ class AudioManager(QObject):
 
         try:
             path = temp_file_manager.create_temp_wav()
-            self._current_temp_file = str(path)
+            self._current_temp_file = path
 
             self._recording_thread = RecordingThread(
                 output_path=path,
@@ -60,7 +61,7 @@ class AudioManager(QObject):
     @Slot(str)
     def _on_recording_finished(self, audio_file: str) -> None:
         try:
-            self._current_temp_file = str(audio_file)
+            self._current_temp_file = Path(audio_file)
             logger.info(f"Audio saved to: {audio_file}")
             self.audio_ready.emit(str(audio_file))
         except Exception as e:

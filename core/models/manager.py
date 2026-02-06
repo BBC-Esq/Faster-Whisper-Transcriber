@@ -50,6 +50,7 @@ class ModelManager(QObject):
         super().__init__()
         self._model = None
         self._model_version: Optional[str] = None
+        self._pending_version: Optional[str] = None
         self._model_mutex = QMutex()
         self._thread_pool = QThreadPool.globalInstance()
         self._current_settings = {}
@@ -57,6 +58,7 @@ class ModelManager(QObject):
     def load_model(self, model_name: str, quant: str, device: str) -> None:
         logger.info(f"Requesting model load: {model_name}, {quant}, {device}")
         new_version = str(uuid.uuid4())
+        self._pending_version = new_version
         runnable = _ModelLoaderRunnable(model_name, quant, device, new_version)
         runnable.signals.model_loaded.connect(self._on_model_loaded)
         runnable.signals.error_occurred.connect(self._on_model_error)
@@ -70,6 +72,12 @@ class ModelManager(QObject):
             self._model_mutex.unlock()
 
     def _on_model_loaded(self, model, name: str, quant: str, device: str, version: str) -> None:
+        if version != self._pending_version:
+            logger.info(f"Ignoring stale model load (version {version})")
+            del model
+            gc.collect()
+            return
+
         self._model_mutex.lock()
         try:
             if self._model is not None:
@@ -93,6 +101,7 @@ class ModelManager(QObject):
         self.model_error.emit(error)
 
     def cleanup(self) -> None:
+        self._thread_pool.waitForDone(5000)
         self._model_mutex.lock()
         try:
             if self._model is not None:

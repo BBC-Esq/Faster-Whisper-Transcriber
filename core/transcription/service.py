@@ -54,6 +54,7 @@ class _TranscriptionRunnable(QRunnable):
 
             if self.get_current_version and self.get_current_version() != self.model_version:
                 logger.warning("Model changed during transcription setup")
+                self.signals.cancelled.emit()
                 return
 
             logger.info(f"Starting transcription: {self.audio_file}")
@@ -86,7 +87,7 @@ class _TranscriptionRunnable(QRunnable):
                     return
 
                 segment_count += 1
-                text_parts.append(segment.text)
+                text_parts.append(segment.text.lstrip())
 
                 if total_duration > 0:
                     progress_percent = min(100, (segment.end / total_duration) * 100)
@@ -191,7 +192,6 @@ class TranscriptionService(QObject):
             except Exception as e:
                 logger.warning(f"Text curation failed: {e}")
 
-        text = "\n".join(line.lstrip() for line in text.splitlines())
         self.transcription_completed.emit(text)
 
     def _on_progress_updated(self, segment_num: int, total_segments: int, percent: float) -> None:
