@@ -5,7 +5,8 @@
 ### 🎤 **Record & Transcribe** &nbsp;&nbsp; 📁 **Transcribe Files** &nbsp;&nbsp; ⚡ **GPU Accelerated**
 ### Requires [Python 3.11](https://www.python.org/downloads/release/python-3119/), [3.12](https://www.python.org/downloads/release/python-31210/) or [3.13](https://www.python.org/downloads/release/python-31311/)<br>
 
-<img width="795" height="309" alt="image" src="https://github.com/user-attachments/assets/8a3dce7f-6cfa-4c3a-9572-ffc3a6ca9843" /><br>
+<img width="707" height="209" alt="image" src="https://github.com/user-attachments/assets/89ee5309-2b7e-4d4c-8da8-1658e76014d3" />
+<br>
 </div>
 
 ## ⚙️ Windows Installer
