@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
 from PySide6.QtCore import QObject, Signal, Slot
 
 from core.audio.recording import RecordingThread
@@ -61,7 +62,7 @@ class AudioManager(QObject):
     @Slot(str)
     def _on_recording_finished(self, audio_file: str) -> None:
         try:
-            self._current_temp_file = Path(audio_file)
+            self._current_temp_file = None
             logger.info(f"Audio saved to: {audio_file}")
             self.audio_ready.emit(str(audio_file))
         except Exception as e:
@@ -73,6 +74,11 @@ class AudioManager(QObject):
             self._recording_thread.stop()
             logger.info("Recording stop requested")
             self.recording_stopped.emit()
+
+    def get_latest_samples(self) -> Optional[np.ndarray]:
+        if self._recording_thread and self._recording_thread.isRunning():
+            return self._recording_thread.get_latest_samples()
+        return None
 
     def cleanup(self) -> None:
         if self._recording_thread and self._recording_thread.isRunning():

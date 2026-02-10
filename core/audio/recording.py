@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Iterator, Optional
 import wave
 
+import numpy as np
 import sounddevice as sd
 from PySide6.QtCore import QThread, Signal
 
@@ -42,6 +43,9 @@ class RecordingThread(QThread):
         self._stop_event = threading.Event()
         self._cleanup_complete = threading.Event()
 
+        self._latest_samples = np.zeros(2048, dtype=np.int16)
+        self._samples_lock = threading.Lock()
+
     @contextmanager
     def _audio_stream(self) -> Iterator[sd.RawInputStream]:
         try:
@@ -67,9 +71,17 @@ class RecordingThread(QThread):
             self._stream_error = msg
             self._overflow_count += 1
         try:
-            self._audio_q.put_nowait(bytes(indata))
+            raw = bytes(indata)
+            self._audio_q.put_nowait(raw)
+            samples = np.frombuffer(raw, dtype=np.int16).copy()
+            with self._samples_lock:
+                self._latest_samples = samples
         except queue.Full:
             self._overflow_count += 1
+
+    def get_latest_samples(self) -> np.ndarray:
+        with self._samples_lock:
+            return self._latest_samples.copy()
 
     def run(self) -> None:
         self.update_status_signal.emit("Recording.")

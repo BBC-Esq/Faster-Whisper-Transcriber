@@ -5,7 +5,6 @@ Placed in: myapp/gui/widgets.py
 Currently just a placeholder so that the `gui` package is complete; add custom widgets here later.
 """
 
-# Example reusable widget template
 if False:
     from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout
 

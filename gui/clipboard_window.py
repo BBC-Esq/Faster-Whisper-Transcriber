@@ -13,8 +13,9 @@ class ClipboardSideWindow(QWidget):
     user_closed = Signal()
     docked_changed = Signal(bool)
     always_on_top_changed = Signal(bool)
+    append_mode_changed = Signal(bool)
 
-    def __init__(self, parent: QWidget | None = None, width: int = 360):
+    def __init__(self, parent: QWidget | None = None, width: int = 350):
         super().__init__(parent)
 
         self._always_on_top = True
@@ -26,7 +27,7 @@ class ClipboardSideWindow(QWidget):
         self._side: str = "right"
         self._last_host_rect: QRect | None = None
         self._desired_width = width
-        self._default_height = 210
+        self._default_height = 180
 
         self.setWindowTitle("Clipboard")
         self._apply_window_flags()
@@ -53,6 +54,12 @@ class ClipboardSideWindow(QWidget):
         clear_btn.clicked.connect(self._text_display.clear)
         actions.addWidget(clear_btn)
 
+        self._append_checkbox = QCheckBox("Append")
+        self._append_checkbox.setToolTip("Append new transcriptions instead of replacing")
+        self._append_checkbox.setChecked(False)
+        self._append_checkbox.toggled.connect(self._on_append_toggled)
+        actions.addWidget(self._append_checkbox)
+
         actions.addStretch(1)
 
         layout.addLayout(actions)
@@ -78,7 +85,7 @@ class ClipboardSideWindow(QWidget):
 
         layout.addLayout(bottom_bar)
 
-        self.setMinimumSize(285, 210)
+        self.setMinimumSize(350, 180)
         self.resize(self._desired_width, self._default_height)
         self.hide()
 
@@ -117,8 +124,16 @@ class ClipboardSideWindow(QWidget):
     def is_always_on_top(self) -> bool:
         return self._always_on_top
 
+    @Slot(bool)
+    def _on_append_toggled(self, checked: bool) -> None:
+        self._append_mode = checked
+        self.append_mode_changed.emit(checked)
+
     def set_append_mode(self, enabled: bool) -> None:
         self._append_mode = enabled
+        self._append_checkbox.blockSignals(True)
+        self._append_checkbox.setChecked(enabled)
+        self._append_checkbox.blockSignals(False)
 
     def is_append_mode(self) -> bool:
         return self._append_mode

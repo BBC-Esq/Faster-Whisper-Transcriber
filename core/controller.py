@@ -64,7 +64,7 @@ class TranscriberController(QObject):
         self.model_manager.model_error.connect(self._on_model_error)
 
         self.audio_manager.recording_started.connect(
-            lambda: self.update_button_signal.emit("Recording... Click to Stop and Transcribe")
+            lambda: self.update_button_signal.emit("Recording...")
         )
         self.audio_manager.audio_ready.connect(self._on_audio_ready)
         self.audio_manager.audio_error.connect(self._on_audio_error)
@@ -165,19 +165,19 @@ class TranscriberController(QObject):
     @Slot(str)
     def _on_transcription_completed(self, text: str) -> None:
         self.text_ready_signal.emit(text)
-        self.update_button_signal.emit("Transcription Done...Click to Record Again")
+        self.update_button_signal.emit("Click to Record")
         self.enable_widgets_signal.emit(True)
 
     @Slot(str)
     def _on_transcription_error(self, error: str) -> None:
         logger.error(f"Transcription error: {error}")
-        self.update_button_signal.emit("Transcription Failed---Click to Record Again")
+        self.update_button_signal.emit("Transcription Failed---Click to Record")
         self.enable_widgets_signal.emit(True)
         self.error_occurred.emit("Transcription Error", error)
 
     @Slot()
     def _on_transcription_cancelled(self) -> None:
-        self.update_button_signal.emit("Transcription Cancelled...Click to Record Again")
+        self.update_button_signal.emit("Click to Record")
         self.enable_widgets_signal.emit(True)
         self.transcription_cancelled_signal.emit()
 

@@ -8,6 +8,10 @@ QMainWindow {
     background: #0f1115;
 }
 
+QDialog {
+    background: #0f1115;
+}
+
 QGroupBox {
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 4px;
@@ -84,20 +88,6 @@ QPushButton#recordButton:pressed {
     background: rgba(89, 160, 255, 0.18);
 }
 
-QPushButton#recordButton[recording="true"] {
-    background: rgba(34, 197, 94, 0.18);
-    border: 1px solid rgba(34, 197, 94, 0.28);
-    font-weight: 600;
-}
-
-QPushButton#recordButton[recording="true"]:hover {
-    background: rgba(34, 197, 94, 0.24);
-}
-
-QPushButton#recordButton[recording="true"]:pressed {
-    background: rgba(34, 197, 94, 0.20);
-}
-
 QPushButton#updateButton[changed="true"] {
     background: rgba(245, 158, 11, 0.18);
     border: 1px solid rgba(245, 158, 11, 0.30);
@@ -138,6 +128,37 @@ QStatusBar {
 
 QMessageBox {
     background: #0f1115;
+}
+
+QMenuBar {
+    background: #0f1115;
+    color: rgba(255, 255, 255, 0.92);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+QMenuBar::item {
+    padding: 4px 10px;
+    background: transparent;
+}
+
+QMenuBar::item:selected {
+    background: rgba(255, 255, 255, 0.08);
+}
+
+QMenu {
+    background: #141821;
+    color: rgba(255, 255, 255, 0.92);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 4px;
+    padding: 4px 0px;
+}
+
+QMenu::item {
+    padding: 6px 24px;
+}
+
+QMenu::item:selected {
+    background: rgba(89, 160, 255, 0.25);
 }
 """
 
