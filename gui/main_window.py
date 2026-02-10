@@ -50,6 +50,8 @@ SETTINGS_DEVICE = "model/device"
 SETTINGS_QUANTIZATION = "model/quantization"
 SETTINGS_TASK_MODE = "model/task_mode"
 
+_DOCK_GAP = 10
+
 
 class BatchSizeDialog(QDialog):
     def __init__(self, parent: QWidget | None = None, default_value: int = 16):
@@ -231,7 +233,7 @@ class MainWindow(QMainWindow):
 
         if self._clipboard_visible:
             if clipboard_docked:
-                self.clipboard_window.show_docked(self._host_rect_global(), gap=5, animate=False)
+                self.clipboard_window.show_docked(self._host_rect_global(), gap=_DOCK_GAP, animate=False)
             else:
                 clip_geometry = self.settings.value(SETTINGS_CLIPBOARD_GEOMETRY)
                 if clip_geometry and isinstance(clip_geometry, QByteArray):
@@ -239,7 +241,7 @@ class MainWindow(QMainWindow):
                     self.clipboard_window.restoreGeometry(clip_geometry)
                     self.clipboard_window.show()
                 else:
-                    self.clipboard_window.show_docked(self._host_rect_global(), gap=5, animate=False)
+                    self.clipboard_window.show_docked(self._host_rect_global(), gap=_DOCK_GAP, animate=False)
 
         self._update_clipboard_button_text()
 
@@ -579,12 +581,12 @@ class MainWindow(QMainWindow):
         host_rect = self._host_rect_global()
         if self._clipboard_visible:
             if self.clipboard_window.is_docked():
-                self.clipboard_window.show_docked(host_rect, gap=10)
+                self.clipboard_window.show_docked(host_rect, gap=_DOCK_GAP)
             else:
                 self.clipboard_window.show()
                 self.clipboard_window.raise_()
         else:
-            self.clipboard_window.hide_animated(host_rect, gap=10)
+            self.clipboard_window.hide_animated(host_rect, gap=_DOCK_GAP)
 
     def _update_clipboard_button_text(self) -> None:
         self.clipboard_button.setText("Hide Clipboard" if self._clipboard_visible else "Show Clipboard")
@@ -636,6 +638,7 @@ class MainWindow(QMainWindow):
         self.cancel_button.setEnabled(True)
 
         if not enabled and self.is_recording:
+            self.controller.stop_recording()
             self.is_recording = False
             update_button_property(self.record_button, "recording", False)
 
@@ -648,6 +651,9 @@ class MainWindow(QMainWindow):
         return None
 
     def eventFilter(self, obj, event):
+        if obj is not self and not (isinstance(obj, QWidget) and self.isAncestorOf(obj)):
+            return super().eventFilter(obj, event)
+
         et = event.type()
         if et in (QEvent.DragEnter, QEvent.DragMove):
             if self._extract_first_supported_drop(event):
@@ -664,7 +670,7 @@ class MainWindow(QMainWindow):
         host_rect = self._host_rect_global()
         self.clipboard_window.update_host_rect(host_rect)
         if self.clipboard_window.isVisible() and self.clipboard_window.is_docked():
-            self.clipboard_window.reposition_to_host(host_rect, gap=10)
+            self.clipboard_window.reposition_to_host(host_rect, gap=_DOCK_GAP)
 
     def moveEvent(self, event):
         super().moveEvent(event)

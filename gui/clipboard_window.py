@@ -151,9 +151,12 @@ class ClipboardSideWindow(QWidget):
 
     def _stop_animation(self) -> None:
         if self._animation:
+            was_running = self._animation.state() == QPropertyAnimation.Running
             self._animation.stop()
             self._animation.deleteLater()
             self._animation = None
+            if was_running:
+                self._end_internal_move()
 
     def _begin_internal_move(self) -> None:
         self._internal_move_count += 1
@@ -174,6 +177,7 @@ class ClipboardSideWindow(QWidget):
         return QRect(x, host_rect.top(), w, h)
 
     def _run_animation(self, start: QRect, end: QRect, duration: int, curve: QEasingCurve.Type, on_finish: list | None = None) -> None:
+        self._stop_animation()
         anim = QPropertyAnimation(self, b"geometry", self)
         anim.setDuration(duration)
         anim.setEasingCurve(curve)

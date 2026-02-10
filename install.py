@@ -5,72 +5,33 @@ import os
 import tkinter as tk
 from tkinter import messagebox
 
-full_install_libs = [
-    "PySide6==6.10.1"
-]
-
-priority_libs = {
-    "cp311": {
-        "GPU": [
-            "nvidia-cuda-runtime-cu12==12.8.90",
-            "nvidia-cublas-cu12==12.8.4.1",
-            "nvidia-cudnn-cu12==9.10.2.21",
-        ],
-        "CPU": []
-    },
-    "cp312": {
-        "GPU": [
-            "nvidia-cuda-runtime-cu12==12.8.90",
-            "nvidia-cublas-cu12==12.8.4.1",
-            "nvidia-cudnn-cu12==9.10.2.21",
-        ],
-        "CPU": []
-    },
-    "cp313": {
-        "GPU": [
-            "nvidia-cuda-runtime-cu12==12.8.90",
-            "nvidia-cublas-cu12==12.8.4.1",
-            "nvidia-cudnn-cu12==9.10.2.21",
-        ],
-        "CPU": []
-    }
+gpu_libs = {
+    "cp311": [
+        "nvidia-cuda-runtime-cu12==12.8.90",
+        "nvidia-cublas-cu12==12.8.4.1",
+        "nvidia-cudnn-cu12==9.10.2.21",
+    ],
+    "cp312": [
+        "nvidia-cuda-runtime-cu12==12.8.90",
+        "nvidia-cublas-cu12==12.8.4.1",
+        "nvidia-cudnn-cu12==9.10.2.21",
+    ],
+    "cp313": [
+        "nvidia-cuda-runtime-cu12==12.8.90",
+        "nvidia-cublas-cu12==12.8.4.1",
+        "nvidia-cudnn-cu12==9.10.2.21",
+    ],
 }
 
 libs = [
-    "av==16.1.0",
-    "certifi==2026.1.4",
-    "cffi==2.0.0",
-    "charset-normalizer==3.4.4",
-    "colorama==0.4.6",
-    "coloredlogs==15.0.1",
     "ctranslate2==4.6.2",
     "faster-whisper==1.2.1",
-    "filelock==3.20.3",
-    "flatbuffers==25.12.19",
-    "fsspec[http]==2026.1.0",
-    "huggingface-hub==0.36.0",
-    "humanfriendly==10.0",
-    "idna==3.11",
-    "mpmath==1.3.0",
-    "nltk==3.9.2",
-    "numpy==2.4.1",
-    "onnxruntime==1.23.2",
-    "packaging==26.0",
-    "protobuf==6.33.4",
-    "psutil==7.2.1",
-    "pycparser==3.0",
-    "pynput==1.8.1",
-    "pyreadline3==3.5.4",
-    "PyYAML==6.0.3",
-    "regex==2026.1.15",
-    "requests==2.32.5",
-    "six==1.17.0",
-    "sounddevice==0.5.5",
-    "sympy==1.13.3",
-    "tokenizers==0.22.2",
-    "tqdm==4.67.1",
-    "typing_extensions==4.15.0",
-    "urllib3==2.6.3",
+    "nltk", # required by my program
+    "psutil", # required by my program
+    "pynput", # required by my program
+    "pyside6", # required by my program
+    "sounddevice", # required by my program
+    "sympy==1.13.3", # set to known torch compatibility
 ]
 
 
@@ -89,8 +50,8 @@ def enable_ansi_colors():
 def has_nvidia_gpu():
     try:
         result = subprocess.run(
-            ["nvidia-smi"], 
-            stdout=subprocess.PIPE, 
+            ["nvidia-smi"],
+            stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
         return result.returncode == 0
@@ -143,33 +104,35 @@ def upgrade_pip_setuptools_wheel(max_retries=5, delay=3):
                     print(f"Retrying in {delay} seconds...")
                     time.sleep(delay)
 
-def install_libraries_with_retry(libraries, with_deps=False, max_retries=5, delay=3):
-    failed_installations = []
-    multiple_attempts = []
+def build_library_list():
+    all_libs = list(libs)
 
-    for library in libraries:
-        for attempt in range(max_retries):
-            try:
-                print(f"\nAttempt {attempt + 1} of {max_retries}: Installing {library}")
-                if with_deps:
-                    command = ["uv", "pip", "install", library]
-                else:
-                    command = ["uv", "pip", "install", library, "--no-deps"]
+    if hardware_type == "GPU":
+        if python_version not in gpu_libs:
+            tkinter_message_box("Version Error", f"No GPU libraries configured for Python {python_version}", type="error")
+            sys.exit(1)
+        all_libs = gpu_libs[python_version] + all_libs
 
-                subprocess.run(command, check=True, capture_output=True, text=True, timeout=480)
-                print(f"\033[92mSuccessfully installed {library}\033[0m")
-                if attempt > 0:
-                    multiple_attempts.append((library, attempt + 1))
-                break
-            except subprocess.CalledProcessError as e:
-                print(f"Attempt {attempt + 1} failed. Error: {e.stderr.strip()}")
-                if attempt < max_retries - 1:
-                    print(f"Retrying in {delay} seconds...")
-                    time.sleep(delay)
-                else:
-                    failed_installations.append(library)
+    return all_libs
 
-    return failed_installations, multiple_attempts
+def install_libraries(libraries, max_retries=5, delay=3):
+    command = ["uv", "pip", "install"] + libraries
+
+    for attempt in range(max_retries):
+        try:
+            print(f"\nAttempt {attempt + 1} of {max_retries}: Installing {len(libraries)} libraries...")
+            subprocess.run(command, check=True, text=True, timeout=1800)
+            print(f"\033[92mSuccessfully installed all {len(libraries)} libraries\033[0m")
+            return True, attempt + 1
+        except subprocess.CalledProcessError as e:
+            print(f"Attempt {attempt + 1} failed.")
+            if e.stderr:
+                print(f"Error: {e.stderr.strip()}")
+            if attempt < max_retries - 1:
+                print(f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+
+    return False, max_retries
 
 def main():
     enable_ansi_colors()
@@ -190,41 +153,17 @@ def main():
     print("\033[92mUpgrading pip, setuptools, and wheel:\033[0m")
     upgrade_pip_setuptools_wheel()
 
-    print("\033[92mInstalling priority libraries:\033[0m")
-    try:
-        current_priority_libs = priority_libs[python_version][hardware_type]
-        if current_priority_libs:
-            priority_failed, priority_multiple = install_libraries_with_retry(current_priority_libs)
-        else:
-            priority_failed, priority_multiple = [], []
-    except KeyError:
-        tkinter_message_box("Version Error", f"No libraries configured for Python {python_version} with {hardware_type} configuration", type="error")
-        sys.exit(1)
-
-    print("\033[92mInstalling other libraries:\033[0m")
-    other_failed, other_multiple = install_libraries_with_retry(libs)
-
-    print("\033[92mInstalling libraries with dependencies:\033[0m")
-    full_failed, full_multiple = install_libraries_with_retry(full_install_libs, with_deps=True)
-
-    all_failed = priority_failed + other_failed + full_failed
-    all_multiple = priority_multiple + other_multiple + full_multiple
+    all_libs = build_library_list()
+    print(f"\033[92mInstalling {len(all_libs)} libraries ({hardware_type} configuration):\033[0m")
+    success, attempts = install_libraries(all_libs)
 
     print("\n----- Installation Summary -----")
-    if all_failed:
-        print("\033[91m\nThe following libraries failed to install:\033[0m")
-        for lib in all_failed:
-            print(f"\033[91m- {lib}\033[0m")
-
-    if all_multiple:
-        print("\033[93m\nThe following libraries required multiple attempts:\033[0m")
-        for lib, attempts in all_multiple:
-            print(f"\033[93m- {lib} (took {attempts} attempts)\033[0m")
-
-    if not all_failed and not all_multiple:
+    if not success:
+        print(f"\033[91mInstallation failed after {attempts} attempts.\033[0m")
+    elif attempts > 1:
+        print(f"\033[93mAll libraries installed successfully after {attempts} attempts.\033[0m")
+    else:
         print("\033[92mAll libraries installed successfully on the first attempt.\033[0m")
-    elif not all_failed:
-        print("\033[92mAll libraries were eventually installed successfully.\033[0m")
 
     end_time = time.time()
     total_time = end_time - start_time
