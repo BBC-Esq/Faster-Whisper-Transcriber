@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 
-from PySide6.QtCore import Signal
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -15,6 +16,7 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMessageBox,
     QSizePolicy,
+    QStyle,
 )
 
 from core.models.metadata import ModelMetadata
@@ -79,9 +81,27 @@ class SettingsDialog(QDialog):
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(10)
 
+        # Model dropdown with delete button
+        model_row = QHBoxLayout()
+        model_row.setSpacing(5)
+
         self.model_dropdown = QComboBox()
         self.model_dropdown.setToolTip("Choose a Whisper model (✓ = downloaded, ⬇ = needs download)")
-        form.addRow("Model", self.model_dropdown)
+        model_row.addWidget(self.model_dropdown, 1)  # stretch factor 1
+
+        # Delete button (trash icon)
+        self.delete_model_btn = QPushButton()
+        self.delete_model_btn.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
+        )
+        self.delete_model_btn.setMaximumWidth(32)
+        self.delete_model_btn.setMaximumHeight(32)
+        self.delete_model_btn.setEnabled(False)  # Disabled by default
+        self.delete_model_btn.setToolTip("Delete selected model")
+        self.delete_model_btn.clicked.connect(self._on_delete_model_clicked)
+        model_row.addWidget(self.delete_model_btn)
+
+        form.addRow("Model", model_row)
 
         self.device_dropdown = QComboBox()
         devices = ["cpu", "cuda"] if self.cuda_available else ["cpu"]
@@ -145,6 +165,9 @@ class SettingsDialog(QDialog):
         self.quantization_dropdown.setCurrentText(
             self.current_settings.get("quantization_type", "float16")
         )
+        
+        # Update delete button state
+        self._update_delete_button_state()
 
     def _update_quantization_options(self) -> None:
         model = self._get_current_model_name()
@@ -245,6 +268,9 @@ class SettingsDialog(QDialog):
                 break
         
         self.model_dropdown.blockSignals(False)
+        
+        # Update delete button state
+        self._update_delete_button_state()
 
     def _estimate_model_size(self, model_name: str, quant: str) -> str:
         """Estimate model download size."""
@@ -346,6 +372,93 @@ class SettingsDialog(QDialog):
         else:
             self.models_folder_label.setText("📁 Default (models/)")
             self.models_folder_label.setToolTip(f"Using default models folder:\n{current_dir}")
+
+    def _update_delete_button_state(self) -> None:
+        """Enable/disable delete button based on selected model."""
+        display_text = self.model_dropdown.currentText()
+        is_downloaded = display_text.startswith("✓")
+        self.delete_model_btn.setEnabled(is_downloaded)
+
+    @Slot()
+    def _on_delete_model_clicked(self) -> None:
+        """Handle delete button click."""
+        model_name = self._get_current_model_name()
+        quant = self.quantization_dropdown.currentText()
+        
+        if self._show_delete_confirmation(model_name, quant):
+            self._delete_model(model_name, quant)
+
+    def _show_delete_confirmation(self, model_name: str, quant: str) -> bool:
+        """Show confirmation dialog with model size."""
+        # Calculate model size
+        model_size = self._get_model_folder_size(model_name, quant)
+        size_text = self._format_size(model_size) if model_size else "Unknown size"
+        
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Delete Model")
+        msg.setText(f"Delete model '{model_name}' ({quant})?")
+        msg.setInformativeText(
+            f"This will permanently delete the model folder.\n\n"
+            f"Size: ~{size_text} will be freed.\n\n"
+            f"Are you sure?"
+        )
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setDefaultButton(QMessageBox.No)
+        
+        return msg.exec() == QMessageBox.Yes
+
+    def _delete_model(self, model_name: str, quant: str) -> None:
+        """Delete model folder."""
+        repo_id = _make_repo_string(model_name, quant)
+        local_name = _extract_model_name_from_repo(repo_id)
+        model_path = get_models_directory() / local_name
+        
+        try:
+            if model_path.exists() and model_path.is_dir():
+                shutil.rmtree(model_path)
+                logger.info(f"Deleted model: {model_path}")
+                
+                # Refresh dropdown to update indicators (no success message)
+                self._refresh_model_dropdown()
+            else:
+                logger.warning(f"Model path not found: {model_path}")
+        except Exception as e:
+            logger.error(f"Failed to delete model {model_path}: {e}")
+            QMessageBox.critical(
+                self,
+                "Deletion Failed",
+                f"Failed to delete model:\n{e}"
+            )
+
+    def _get_model_folder_size(self, model_name: str, quant: str) -> int:
+        """Get size of model folder in bytes."""
+        try:
+            repo_id = _make_repo_string(model_name, quant)
+            local_name = _extract_model_name_from_repo(repo_id)
+            model_path = get_models_directory() / local_name
+            
+            if model_path.exists() and model_path.is_dir():
+                total_size = 0
+                for file in model_path.rglob('*'):
+                    if file.is_file():
+                        total_size += file.stat().st_size
+                return total_size
+        except Exception as e:
+            logger.warning(f"Failed to calculate model size: {e}")
+        
+        return 0
+
+    def _format_size(self, size_bytes: int) -> str:
+        """Format size in human-readable format."""
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        elif size_bytes < 1024 ** 2:
+            return f"{size_bytes / 1024:.1f} KB"
+        elif size_bytes < 1024 ** 3:
+            return f"{size_bytes / (1024 ** 2):.1f} MB"
+        else:
+            return f"{size_bytes / (1024 ** 3):.2f} GB"
 
     def _on_reset_dimensions_clicked(self) -> None:
         self.reset_dimensions_requested.emit()
