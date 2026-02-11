@@ -4,6 +4,12 @@ import contextlib
 import warnings
 import sys
 import signal
+import os
+
+# Configure DPI awareness BEFORE Qt import to avoid Windows warnings
+if sys.platform == "win32":
+    os.environ["QT_ENABLE_HIGHDPI_SCALING"] = "0"
+    os.environ["QT_SCALE_FACTOR"] = "1"
 
 warnings.filterwarnings(
     "ignore",
@@ -57,12 +63,37 @@ def _get_cuda_device_name() -> str | None:
     return None
 
 
+def _check_models_availability():
+    """Check if any models are available locally and log info."""
+    try:
+        from core.models.download import list_local_models, get_models_directory
+        
+        models_dir = get_models_directory()
+        local_models = list_local_models()
+        
+        logger = get_logger(__name__)
+        logger.info(f"Models directory: {models_dir}")
+        
+        if not local_models:
+            logger.warning("No Whisper models found locally")
+            logger.info("Models will be automatically downloaded when first needed")
+            logger.info("Or download manually: python download_models.py --model large-v3-turbo")
+        else:
+            logger.info(f"Found {len(local_models)} local model(s): {', '.join(local_models)}")
+    except Exception as e:
+        logger = get_logger(__name__)
+        logger.debug(f"Error checking models availability: {e}")
+
+
 def run_gui() -> None:
     log_file = setup_logging()
     logger = get_logger(__name__)
     logger.info("Application starting")
     logger.info(f"Log file: {log_file}")
     logger.info(f"CUDA paths configured: {_cuda_paths_configured}")
+    
+    # Check models availability
+    _check_models_availability()
 
     sys.excepthook = _global_exception_handler
 

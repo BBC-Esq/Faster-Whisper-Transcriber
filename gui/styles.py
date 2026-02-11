@@ -1,7 +1,9 @@
 APP_STYLESHEET = """
 QWidget {
     font-family: "Segoe UI", "Inter", "Helvetica Neue", Arial, sans-serif;
-    font-size: 10pt;
+    font-size: 11pt;
+    background: #0f1115;
+    color: rgba(255, 255, 255, 0.92);
 }
 
 QMainWindow {
@@ -118,6 +120,7 @@ QTextEdit {
     background: rgba(255, 255, 255, 0.04);
     color: rgba(255, 255, 255, 0.95);
     selection-background-color: rgba(89, 160, 255, 0.28);
+    font-size: 12pt;
 }
 
 QStatusBar {

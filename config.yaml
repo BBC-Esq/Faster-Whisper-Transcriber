@@ -1,5 +1,5 @@
-model_name: distil-whisper-large-v3
-quantization_type: bfloat16
+model_name: large-v3-turbo
+quantization_type: float16
 device_type: cuda
 task_mode: transcribe
 show_clipboard_window: false
@@ -12,4 +12,4 @@ supported_quantizations:
   - float32
 curate_transcription: true
 clipboard_append_mode: false
-append_mode: false
+models_directory: E:\FWTranscriber_models

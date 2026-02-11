@@ -25,7 +25,7 @@ class ConfigManager:
     }
 
     DEFAULT_CONFIG = {
-        "model_name": "base.en",
+        "model_name": "base",
         "quantization_type": "float32",
         "device_type": "cpu",
         "task_mode": "transcribe",
@@ -33,6 +33,7 @@ class ConfigManager:
         "supported_quantizations": {"cpu": [], "cuda": []},
         "curate_transcription": True,
         "clipboard_append_mode": False,
+        "models_directory": None,
     }
 
     VALIDATION_SCHEMA = {
@@ -43,6 +44,7 @@ class ConfigManager:
         "show_clipboard_window": {"type": bool},
         "curate_transcription": {"type": bool},
         "clipboard_append_mode": {"type": bool},
+        "models_directory": {"type": (str, type(None)), "validator": "_validate_models_directory"},
     }
 
     def __init__(self):
@@ -67,6 +69,27 @@ class ConfigManager:
         if valid_models and value not in valid_models:
             return self.DEFAULT_CONFIG["model_name"]
         return value
+
+    def _validate_models_directory(self, value: Any) -> str | None:
+        """Validate models directory path."""
+        if value is None:
+            return None
+        
+        if not isinstance(value, str):
+            logger.warning(f"Invalid models_directory type: {type(value)}, using default")
+            return None
+        
+        # Empty string means default
+        if value.strip() == "":
+            return None
+        
+        try:
+            # Validate path syntax (doesn't check if it exists)
+            path = Path(value)
+            return str(path)
+        except Exception as e:
+            logger.warning(f"Invalid models_directory path '{value}': {e}, using default")
+            return None
 
     def load_config(self) -> dict[str, Any]:
         if self._config_cache is None:
@@ -183,6 +206,14 @@ class ConfigManager:
         current = self.get_supported_quantizations()
         current[device] = quantizations
         self.set_value("supported_quantizations", current)
+
+    def get_models_directory(self) -> str | None:
+        """Get custom models directory path or None for default."""
+        return self.get_value("models_directory", None)
+
+    def set_models_directory(self, path: str | None) -> None:
+        """Set custom models directory path."""
+        self.set_value("models_directory", path)
 
     def invalidate_cache(self) -> None:
         self._config_cache = None

@@ -96,7 +96,7 @@ class MainWindow(QMainWindow):
     hotkey_toggle_recording = Signal()
 
     DEFAULTS = {
-        "model": "base.en",
+        "model": "base",
         "device": "cpu",
         "quantization": "float32",
         "task_mode": "transcribe",

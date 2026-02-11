@@ -8,8 +8,27 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
+def _get_base_directory() -> Path:
+    """Determine base directory of the application."""
+    if getattr(sys, 'frozen', False):
+        # PyInstaller frozen mode (compiled exe)
+        return Path(sys.executable).parent
+    else:
+        # Development mode
+        return Path(__file__).parent.parent
+
+
 def _get_nvidia_base_path() -> Path | None:
     """Locate the nvidia packages directory."""
+    base_dir = _get_base_directory()
+    
+    # Priority 1: cuda_lib/nvidia/ next to exe or in project root
+    cuda_lib_nvidia = base_dir / "cuda_lib" / "nvidia"
+    if cuda_lib_nvidia.exists():
+        logger.info(f"Found CUDA libraries in cuda_lib: {cuda_lib_nvidia}")
+        return cuda_lib_nvidia
+    
+    # Priority 2: Standard location in venv site-packages (for development/fallback)
     venv_base = Path(sys.executable).parent.parent
 
     if sys.platform == "win32":
@@ -19,13 +38,17 @@ def _get_nvidia_base_path() -> Path | None:
         nvidia_path = venv_base / "lib" / python_ver / "site-packages" / "nvidia"
 
     if nvidia_path.exists():
+        logger.info(f"Found CUDA libraries in site-packages: {nvidia_path}")
         return nvidia_path
 
+    # Fallback: Search in sys.path
     for path in sys.path:
         candidate = Path(path) / "nvidia"
         if candidate.exists():
+            logger.info(f"Found CUDA libraries in sys.path: {candidate}")
             return candidate
 
+    logger.debug("No CUDA libraries found in any location")
     return None
 
 
@@ -52,6 +75,13 @@ def _get_library_paths(nvidia_base: Path) -> list[Path]:
 
 def set_cuda_paths() -> bool:
     """Configure CUDA library paths for the current platform."""
+    base_dir = _get_base_directory()
+    running_mode = 'frozen' if getattr(sys, 'frozen', False) else 'development'
+    
+    logger.info(f"Running mode: {running_mode}")
+    logger.info(f"Base directory: {base_dir}")
+    logger.debug(f"Looking for CUDA libs in: {base_dir / 'cuda_lib' / 'nvidia'}")
+    
     nvidia_base = _get_nvidia_base_path()
 
     if nvidia_base is None:
