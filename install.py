@@ -5,23 +5,13 @@ import os
 import tkinter as tk
 from tkinter import messagebox
 
-gpu_libs = {
-    "cp311": [
-        "nvidia-cuda-runtime-cu12==12.8.90",
-        "nvidia-cublas-cu12==12.8.4.1",
-        "nvidia-cudnn-cu12==9.10.2.21",
-    ],
-    "cp312": [
-        "nvidia-cuda-runtime-cu12==12.8.90",
-        "nvidia-cublas-cu12==12.8.4.1",
-        "nvidia-cudnn-cu12==9.10.2.21",
-    ],
-    "cp313": [
-        "nvidia-cuda-runtime-cu12==12.8.90",
-        "nvidia-cublas-cu12==12.8.4.1",
-        "nvidia-cudnn-cu12==9.10.2.21",
-    ],
-}
+_gpu_packages = [
+    "nvidia-cuda-runtime-cu12==12.8.90",
+    "nvidia-cublas-cu12==12.8.4.1",
+    "nvidia-cudnn-cu12==9.10.2.21",
+]
+
+_supported_python_versions = {"cp311", "cp312", "cp313"}
 
 libs = [
     "ctranslate2==4.6.2",
@@ -108,10 +98,10 @@ def build_library_list():
     all_libs = list(libs)
 
     if hardware_type == "GPU":
-        if python_version not in gpu_libs:
+        if python_version not in _supported_python_versions:
             tkinter_message_box("Version Error", f"No GPU libraries configured for Python {python_version}", type="error")
             sys.exit(1)
-        all_libs = gpu_libs[python_version] + all_libs
+        all_libs = list(_gpu_packages) + all_libs
 
     return all_libs
 

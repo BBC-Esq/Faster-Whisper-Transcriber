@@ -35,14 +35,9 @@ class WaveformButton(QPushButton):
             return
         self._state = state
 
-        if state == self.IDLE:
+        if state in (self.IDLE, self.RECORDING):
             self._waveform = np.zeros(512)
             self._peak_level = 0.0
-
-        elif state == self.RECORDING:
-            self._waveform = np.zeros(512)
-            self._peak_level = 0.0
-
         elif state == self.TRANSCRIBING:
             self._init_particles()
 
@@ -189,17 +184,7 @@ class WaveformButton(QPushButton):
         painter.setPen(QPen(line_grad, 1.2, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
         painter.drawPath(path)
 
-        label = self.text()
-        if label:
-            font = painter.font()
-            font.setPointSize(10)
-            font.setBold(True)
-            painter.setFont(font)
-            if self.underMouse():
-                painter.setPen(QColor(80, 170, 220, 200))
-            else:
-                painter.setPen(QColor(80, 170, 220, 200))
-            painter.drawText(QRectF(0, 4, w, 28), Qt.AlignmentFlag.AlignCenter, label)
+        self._draw_label(painter, w)
 
     def _draw_recording(self, painter: QPainter, w: int, h: int) -> None:
         margin_x = 10
@@ -236,14 +221,7 @@ class WaveformButton(QPushButton):
         painter.setPen(QPen(gradient, thickness, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin))
         painter.drawPath(wave_path)
 
-        label = self.text()
-        if label:
-            font = painter.font()
-            font.setPointSize(10)
-            font.setBold(True)
-            painter.setFont(font)
-            painter.setPen(QColor(80, 170, 220, 200))
-            painter.drawText(QRectF(0, 4, w, 28), Qt.AlignmentFlag.AlignCenter, label)
+        self._draw_label(painter, w)
 
     def _draw_transcribing(self, painter: QPainter, w: int, h: int) -> None:
         margin_x = 12
@@ -367,6 +345,9 @@ class WaveformButton(QPushButton):
 
         painter.setBrush(Qt.BrushStyle.NoBrush)
 
+        self._draw_label(painter, w)
+
+    def _draw_label(self, painter: QPainter, w: int) -> None:
         label = self.text()
         if label:
             font = painter.font()

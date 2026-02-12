@@ -10,6 +10,8 @@ class ModelInfo:
 
 class ModelMetadata:
 
+    _RESTRICTED_QUANTS = {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}
+
     _MODELS: List[ModelInfo] = [
         ModelInfo("tiny", True),
         ModelInfo("tiny.en", False),
@@ -20,10 +22,10 @@ class ModelMetadata:
         ModelInfo("medium", True),
         ModelInfo("medium.en", False),
         ModelInfo("large-v3", True),
-        ModelInfo("large-v3-turbo", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}),
-        ModelInfo("distil-whisper-small.en", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}),
-        ModelInfo("distil-whisper-medium.en", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}),
-        ModelInfo("distil-whisper-large-v3", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}),
+        ModelInfo("large-v3-turbo", False, _RESTRICTED_QUANTS),
+        ModelInfo("distil-whisper-small.en", False, _RESTRICTED_QUANTS),
+        ModelInfo("distil-whisper-medium.en", False, _RESTRICTED_QUANTS),
+        ModelInfo("distil-whisper-large-v3", False, _RESTRICTED_QUANTS),
     ]
 
     _MODEL_MAP: Dict[str, ModelInfo] = {m.name: m for m in _MODELS}

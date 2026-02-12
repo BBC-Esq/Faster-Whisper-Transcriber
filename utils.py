@@ -39,11 +39,3 @@ def is_gpu_install() -> bool:
             pass
 
     return True
-
-
-def safe_call(func, *args, default=None, **kwargs):
-    """Call a function safely, returning default on any exception."""
-    try:
-        return func(*args, **kwargs)
-    except Exception:
-        return default

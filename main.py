@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import contextlib
 import warnings
 import sys
 import signal
@@ -39,22 +38,14 @@ def _global_exception_handler(exc_type, exc_value, exc_tb):
         )
 
 
-def _check_cuda_available() -> bool:
-    try:
-        import ctranslate2
-        return ctranslate2.get_cuda_device_count() > 0
-    except Exception:
-        return False
-
-
-def _get_cuda_device_name() -> str | None:
+def _check_cuda_available() -> tuple[bool, str | None]:
     try:
         import ctranslate2
         if ctranslate2.get_cuda_device_count() > 0:
-            return "NVIDIA GPU"
+            return True, "NVIDIA GPU"
     except Exception:
         pass
-    return None
+    return False, None
 
 
 def run_gui() -> None:
@@ -71,13 +62,11 @@ def run_gui() -> None:
     app.setStyleSheet(APP_STYLESHEET)
     _install_sigint_handler()
 
-    cuda_ok = _check_cuda_available()
+    cuda_ok, device_name = _check_cuda_available()
     logger.info(f"CUDA available: {cuda_ok}")
 
-    if cuda_ok:
-        device_name = _get_cuda_device_name()
-        if device_name:
-            logger.info(f"CUDA device: {device_name}")
+    if device_name:
+        logger.info(f"CUDA device: {device_name}")
 
     try:
         window = MainWindow(cuda_available=cuda_ok)
