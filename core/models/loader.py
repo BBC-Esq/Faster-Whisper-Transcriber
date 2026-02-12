@@ -1,9 +1,12 @@
 from __future__ import annotations
 
-from typing import Optional
+import threading
+from pathlib import Path
+from typing import Optional, Callable
 
 import psutil
 from faster_whisper import WhisperModel
+from huggingface_hub import HfApi, hf_hub_download, snapshot_download
 
 from core.logging_config import get_logger
 from core.exceptions import ModelLoadError
@@ -17,28 +20,88 @@ def _make_repo_string(model_name: str, quantization_type: str) -> str:
     return f"ctranslate2-4you/whisper-{model_name}-ct2-{quantization_type}"
 
 
+def check_model_cached(repo_id: str) -> Optional[str]:
+    try:
+        local_path = snapshot_download(repo_id, local_files_only=True)
+        return local_path
+    except Exception:
+        return None
+
+
+def get_repo_file_info(repo_id: str) -> list[tuple[str, int]]:
+    api = HfApi()
+    info = api.repo_info(repo_id, repo_type="model")
+    files = []
+    for sibling in info.siblings:
+        size = sibling.size if sibling.size is not None else 0
+        files.append((sibling.rfilename, size))
+    files.sort(key=lambda x: x[1])
+    return files
+
+
+def get_missing_files(
+    repo_id: str, files_info: list[tuple[str, int]]
+) -> tuple[Optional[str], list[tuple[str, int]]]:
+    try:
+        local_path = snapshot_download(repo_id, local_files_only=True)
+    except Exception:
+        return None, list(files_info)
+
+    missing = []
+    for filename, size in files_info:
+        filepath = Path(local_path) / filename
+        if not filepath.exists():
+            missing.append((filename, size))
+
+    if missing:
+        return None, missing
+    return local_path, []
+
+
+def download_model_files(
+    repo_id: str,
+    files_info: list[tuple[str, int]],
+    progress_callback: Optional[Callable[[int, int], None]] = None,
+    cancel_event: Optional[threading.Event] = None,
+) -> str:
+    total_bytes = sum(size for _, size in files_info)
+    downloaded_bytes = 0
+
+    for filename, size in files_info:
+        if cancel_event and cancel_event.is_set():
+            raise InterruptedError("Download cancelled")
+
+        hf_hub_download(repo_id, filename)
+        downloaded_bytes += size
+
+        if progress_callback:
+            progress_callback(downloaded_bytes, total_bytes)
+
+    local_path = snapshot_download(repo_id, local_files_only=True)
+    return local_path
+
+
 def load_model(
-    model_name: str,
+    model_path: str,
     quantization_type: str = "float32",
     device_type: str = "cpu",
     cpu_threads: Optional[int] = None,
 ) -> WhisperModel:
-    repo = _make_repo_string(model_name, quantization_type)
-    logger.info(f"Loading Whisper model {repo} on {device_type}")
+    logger.info(f"Loading Whisper model from {model_path} on {device_type}")
 
     if cpu_threads is None:
         cpu_threads = psutil.cpu_count(logical=False) or 1
 
     try:
         model = WhisperModel(
-            repo,
+            model_path,
             device=device_type,
             compute_type=quantization_type,
             cpu_threads=cpu_threads,
         )
     except Exception as e:
-        logger.exception(f"Failed to load model {repo}")
-        raise ModelLoadError(f"Error loading model {repo}: {e}") from e
+        logger.exception(f"Failed to load model from {model_path}")
+        raise ModelLoadError(f"Error loading model: {e}") from e
 
-    logger.info(f"Model {repo} ready")
+    logger.info(f"Model ready from {model_path}")
     return model

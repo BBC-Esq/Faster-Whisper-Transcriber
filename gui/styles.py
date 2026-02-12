@@ -126,6 +126,25 @@ QStatusBar {
     font-weight: 600;
 }
 
+QStatusBar QLabel {
+    color: rgba(34, 197, 94, 0.95);
+    font-weight: 600;
+}
+
+QProgressBar {
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.05);
+    text-align: center;
+    color: rgba(255, 255, 255, 0.9);
+    font-size: 8pt;
+}
+
+QProgressBar::chunk {
+    background: rgba(89, 160, 255, 0.45);
+    border-radius: 2px;
+}
+
 QMessageBox {
     background: #0f1115;
 }

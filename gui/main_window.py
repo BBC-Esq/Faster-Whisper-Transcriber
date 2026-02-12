@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QMenuBar,
     QMenu,
+    QProgressBar,
 )
 
 from core.quantization import CheckQuantizationSupport
@@ -72,7 +73,12 @@ class BatchSizeDialog(QDialog):
         layout.setContentsMargins(10, 10, 10, 10)
         layout.setSpacing(5)
 
-        layout.addWidget(QLabel("Set batch size for file transcription.\nUse 1 for non-batched transcription."))
+        layout.addWidget(
+            QLabel(
+                "Set batch size for file transcription.\n"
+                "Use 1 for non-batched transcription."
+            )
+        )
 
         row = QHBoxLayout()
         row.setSpacing(5)
@@ -121,16 +127,25 @@ class MainWindow(QMainWindow):
         self.cuda_available = cuda_available
         self._clipboard_visible = False
         self._toggleable_widgets: list[QWidget] = []
+        self._model_is_loaded = False
+        self._is_loading_model = False
+        self._download_total_bytes = 0
 
         self.clipboard_window = ClipboardSideWindow(None, width=_DEFAULT_CLIPBOARD_WIDTH)
         self.clipboard_window.user_closed.connect(self._on_clipboard_closed)
-        self.clipboard_window.docked_changed.connect(lambda d: logger.debug(f"Clipboard docked: {d}"))
-        self.clipboard_window.always_on_top_changed.connect(self._on_clipboard_always_on_top_changed)
+        self.clipboard_window.docked_changed.connect(
+            lambda d: logger.debug(f"Clipboard docked: {d}")
+        )
+        self.clipboard_window.always_on_top_changed.connect(
+            self._on_clipboard_always_on_top_changed
+        )
 
         self._build_ui()
         self._setup_connections()
 
         self._load_quantization_support()
+
+        self.set_widgets_enabled(False)
 
         self._restore_state()
 
@@ -151,14 +166,19 @@ class MainWindow(QMainWindow):
     def _load_quantization_support(self) -> None:
         try:
             config = config_manager.load_config()
-            self.supported_quantizations = config.get("supported_quantizations", {"cpu": [], "cuda": []})
+            self.supported_quantizations = config.get(
+                "supported_quantizations", {"cpu": [], "cuda": []}
+            )
 
             if not self.supported_quantizations.get("cpu") or (
-                self.cuda_available and not self.supported_quantizations.get("cuda")
+                self.cuda_available
+                and not self.supported_quantizations.get("cuda")
             ):
                 CheckQuantizationSupport().update_supported_quantizations()
                 config = config_manager.load_config()
-                self.supported_quantizations = config.get("supported_quantizations", {"cpu": [], "cuda": []})
+                self.supported_quantizations = config.get(
+                    "supported_quantizations", {"cpu": [], "cuda": []}
+                )
         except Exception as e:
             logger.error(f"Failed to load precision support: {e}")
             self.supported_quantizations = {"cpu": ["float32"], "cuda": []}
@@ -179,19 +199,33 @@ class MainWindow(QMainWindow):
         logger.warning(f"Invalid device '{device}', falling back to default")
         return self.DEFAULTS["device"]
 
-    def _validate_quantization(self, quantization: str, model_name: str, device: str) -> str:
-        available = ModelMetadata.get_quantization_options(model_name, device, self.supported_quantizations)
+    def _validate_quantization(
+        self, quantization: str, model_name: str, device: str
+    ) -> str:
+        available = ModelMetadata.get_quantization_options(
+            model_name, device, self.supported_quantizations
+        )
         if quantization in available:
             return quantization
         if available:
-            logger.warning(f"Precision '{quantization}' not available for {model_name}/{device}, using {available[0]}")
+            logger.warning(
+                f"Precision '{quantization}' not available for "
+                f"{model_name}/{device}, using {available[0]}"
+            )
             return available[0]
-        logger.warning(f"No quantizations available for {model_name}/{device}, using float32")
+        logger.warning(
+            f"No quantizations available for {model_name}/{device}, using float32"
+        )
         return "float32"
 
     def _validate_task_mode(self, task_mode: str, model_name: str) -> str:
-        if task_mode == "translate" and not ModelMetadata.supports_translation(model_name):
-            logger.warning(f"Model '{model_name}' doesn't support translation, falling back to transcribe")
+        if task_mode == "translate" and not ModelMetadata.supports_translation(
+            model_name
+        ):
+            logger.warning(
+                f"Model '{model_name}' doesn't support translation, "
+                f"falling back to transcribe"
+            )
             return "transcribe"
         if task_mode in ["transcribe", "translate"]:
             return task_mode
@@ -203,7 +237,9 @@ class MainWindow(QMainWindow):
         geometry = self.settings.value(SETTINGS_GEOMETRY)
         if geometry and isinstance(geometry, QByteArray):
             if not self.restoreGeometry(geometry):
-                logger.warning("Failed to restore main window geometry, using defaults")
+                logger.warning(
+                    "Failed to restore main window geometry, using defaults"
+                )
                 self.resize(_DEFAULT_MAIN_WIDTH, _DEFAULT_MAIN_HEIGHT)
                 self._center_on_screen()
         else:
@@ -212,8 +248,12 @@ class MainWindow(QMainWindow):
 
         saved_model = self.settings.value(SETTINGS_MODEL, self.DEFAULTS["model"])
         saved_device = self.settings.value(SETTINGS_DEVICE, self.DEFAULTS["device"])
-        saved_quant = self.settings.value(SETTINGS_QUANTIZATION, self.DEFAULTS["quantization"])
-        saved_task = self.settings.value(SETTINGS_TASK_MODE, self.DEFAULTS["task_mode"])
+        saved_quant = self.settings.value(
+            SETTINGS_QUANTIZATION, self.DEFAULTS["quantization"]
+        )
+        saved_task = self.settings.value(
+            SETTINGS_TASK_MODE, self.DEFAULTS["task_mode"]
+        )
 
         model = self._validate_model(saved_model)
         device = self._validate_device(saved_device)
@@ -232,18 +272,32 @@ class MainWindow(QMainWindow):
         self.task_combo.setCurrentText(f"{task_mode.capitalize()} Mode")
         self.task_combo.blockSignals(False)
 
-        append_mode = self.settings.value(SETTINGS_APPEND_MODE, self.DEFAULTS["append_mode"], type=bool)
+        append_mode = self.settings.value(
+            SETTINGS_APPEND_MODE, self.DEFAULTS["append_mode"], type=bool
+        )
         self.clipboard_window.set_append_mode(append_mode)
 
-        always_on_top = self.settings.value(SETTINGS_CLIPBOARD_ALWAYS_ON_TOP, self.DEFAULTS["clipboard_always_on_top"], type=bool)
+        always_on_top = self.settings.value(
+            SETTINGS_CLIPBOARD_ALWAYS_ON_TOP,
+            self.DEFAULTS["clipboard_always_on_top"],
+            type=bool,
+        )
         self.clipboard_window.set_always_on_top(always_on_top)
 
-        clipboard_docked = self.settings.value(SETTINGS_CLIPBOARD_DOCKED, self.DEFAULTS["clipboard_docked"], type=bool)
-        self._clipboard_visible = self.settings.value(SETTINGS_CLIPBOARD_VISIBLE, self.DEFAULTS["clipboard_visible"], type=bool)
+        clipboard_docked = self.settings.value(
+            SETTINGS_CLIPBOARD_DOCKED, self.DEFAULTS["clipboard_docked"], type=bool
+        )
+        self._clipboard_visible = self.settings.value(
+            SETTINGS_CLIPBOARD_VISIBLE,
+            self.DEFAULTS["clipboard_visible"],
+            type=bool,
+        )
 
         if self._clipboard_visible:
             if clipboard_docked:
-                self.clipboard_window.show_docked(self._host_rect_global(), gap=_DOCK_GAP, animate=False)
+                self.clipboard_window.show_docked(
+                    self._host_rect_global(), gap=_DOCK_GAP, animate=False
+                )
             else:
                 clip_geometry = self.settings.value(SETTINGS_CLIPBOARD_GEOMETRY)
                 if clip_geometry and isinstance(clip_geometry, QByteArray):
@@ -251,7 +305,9 @@ class MainWindow(QMainWindow):
                     self.clipboard_window.restoreGeometry(clip_geometry)
                     self.clipboard_window.show()
                 else:
-                    self.clipboard_window.show_docked(self._host_rect_global(), gap=_DOCK_GAP, animate=False)
+                    self.clipboard_window.show_docked(
+                        self._host_rect_global(), gap=_DOCK_GAP, animate=False
+                    )
 
         self._update_clipboard_button_text()
 
@@ -263,25 +319,51 @@ class MainWindow(QMainWindow):
         except Exception as e:
             logger.warning(f"Failed to sync config manager: {e}")
 
-        logger.info(f"State restored: model={model}, device={device}, quant={quantization}, task={task_mode}")
+        logger.info(
+            f"State restored: model={model}, device={device}, "
+            f"quant={quantization}, task={task_mode}"
+        )
+
+        self._update_model_status("No model loaded")
+        self.controller.update_model(model, quantization, device)
 
     def _save_state(self) -> None:
         logger.info("Saving application state to QSettings")
 
         self.settings.setValue(SETTINGS_GEOMETRY, self.saveGeometry())
 
-        self.settings.setValue(SETTINGS_MODEL, self.loaded_model_settings.get("model_name", self.DEFAULTS["model"]))
-        self.settings.setValue(SETTINGS_DEVICE, self.loaded_model_settings.get("device_type", self.DEFAULTS["device"]))
-        self.settings.setValue(SETTINGS_QUANTIZATION, self.loaded_model_settings.get("quantization_type", self.DEFAULTS["quantization"]))
+        self.settings.setValue(
+            SETTINGS_MODEL,
+            self.loaded_model_settings.get("model_name", self.DEFAULTS["model"]),
+        )
+        self.settings.setValue(
+            SETTINGS_DEVICE,
+            self.loaded_model_settings.get("device_type", self.DEFAULTS["device"]),
+        )
+        self.settings.setValue(
+            SETTINGS_QUANTIZATION,
+            self.loaded_model_settings.get(
+                "quantization_type", self.DEFAULTS["quantization"]
+            ),
+        )
         self.settings.setValue(SETTINGS_TASK_MODE, self.task_mode)
 
-        self.settings.setValue(SETTINGS_APPEND_MODE, self.clipboard_window.is_append_mode())
+        self.settings.setValue(
+            SETTINGS_APPEND_MODE, self.clipboard_window.is_append_mode()
+        )
         self.settings.setValue(SETTINGS_CLIPBOARD_VISIBLE, self._clipboard_visible)
-        self.settings.setValue(SETTINGS_CLIPBOARD_ALWAYS_ON_TOP, self.clipboard_window.is_always_on_top())
-        self.settings.setValue(SETTINGS_CLIPBOARD_DOCKED, self.clipboard_window.is_docked())
+        self.settings.setValue(
+            SETTINGS_CLIPBOARD_ALWAYS_ON_TOP,
+            self.clipboard_window.is_always_on_top(),
+        )
+        self.settings.setValue(
+            SETTINGS_CLIPBOARD_DOCKED, self.clipboard_window.is_docked()
+        )
 
         if not self.clipboard_window.is_docked():
-            self.settings.setValue(SETTINGS_CLIPBOARD_GEOMETRY, self.clipboard_window.saveGeometry())
+            self.settings.setValue(
+                SETTINGS_CLIPBOARD_GEOMETRY, self.clipboard_window.saveGeometry()
+            )
 
         self.settings.sync()
         logger.debug("State saved successfully")
@@ -297,15 +379,34 @@ class MainWindow(QMainWindow):
         self.settings.setValue(SETTINGS_CLIPBOARD_ALWAYS_ON_TOP, value)
 
     def _setup_connections(self) -> None:
-        self.clipboard_window.append_mode_changed.connect(self._on_append_mode_changed)
+        self.clipboard_window.append_mode_changed.connect(
+            self._on_append_mode_changed
+        )
 
-        self.controller.update_status_signal.connect(self.statusBar().showMessage)
         self.controller.update_button_signal.connect(self._on_button_text_update)
         self.controller.enable_widgets_signal.connect(self.set_widgets_enabled)
         self.controller.text_ready_signal.connect(self._on_transcription_ready)
         self.controller.model_loaded_signal.connect(self._on_model_loaded_success)
         self.controller.error_occurred.connect(self._show_error_dialog)
-        self.controller.transcription_cancelled_signal.connect(self._on_transcription_cancelled)
+        self.controller.transcription_cancelled_signal.connect(
+            self._on_transcription_cancelled
+        )
+
+        self.controller.model_download_started.connect(
+            self._on_model_download_started
+        )
+        self.controller.model_download_progress.connect(
+            self._on_model_download_progress
+        )
+        self.controller.model_download_finished.connect(
+            self._on_model_download_finished
+        )
+        self.controller.model_download_cancelled.connect(
+            self._on_model_download_cancelled
+        )
+        self.controller.model_loading_started.connect(
+            self._on_model_loading_started
+        )
 
     def _build_ui(self) -> None:
         menu_bar = self.menuBar()
@@ -325,7 +426,26 @@ class MainWindow(QMainWindow):
         root.addWidget(self._build_main_group())
         root.addStretch(1)
 
-        self.statusBar().showMessage("Ready")
+        self.model_status_label = QLabel("No model loaded")
+        self.model_status_label.setMinimumWidth(100)
+
+        self.download_progress_bar = QProgressBar()
+        self.download_progress_bar.setFixedWidth(130)
+        self.download_progress_bar.setFixedHeight(14)
+        self.download_progress_bar.setRange(0, 10000)
+        self.download_progress_bar.setValue(0)
+        self.download_progress_bar.setTextVisible(False)
+        self.download_progress_bar.setVisible(False)
+
+        self.cancel_download_button = QPushButton("Cancel")
+        self.cancel_download_button.setFixedWidth(55)
+        self.cancel_download_button.setFixedHeight(18)
+        self.cancel_download_button.setVisible(False)
+        self.cancel_download_button.clicked.connect(self._cancel_model_download)
+
+        self.statusBar().addWidget(self.model_status_label, 1)
+        self.statusBar().addPermanentWidget(self.download_progress_bar)
+        self.statusBar().addPermanentWidget(self.cancel_download_button)
         self.statusBar().setSizeGripEnabled(True)
 
         self.resize(_DEFAULT_MAIN_WIDTH, _DEFAULT_MAIN_HEIGHT)
@@ -349,9 +469,13 @@ class MainWindow(QMainWindow):
         left_col.addWidget(self.task_combo)
 
         self.transcribe_file_button = QPushButton("Transcribe File")
-        self.transcribe_file_button.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
+        self.transcribe_file_button.setSizePolicy(
+            QSizePolicy.Preferred, QSizePolicy.Fixed
+        )
         self.transcribe_file_button.setToolTip("Select an audio file to transcribe")
-        self.transcribe_file_button.clicked.connect(self._select_and_transcribe_file)
+        self.transcribe_file_button.clicked.connect(
+            self._select_and_transcribe_file
+        )
         self._register_toggleable_widget(self.transcribe_file_button)
         left_col.addWidget(self.transcribe_file_button)
 
@@ -367,7 +491,9 @@ class MainWindow(QMainWindow):
         self.record_button = WaveformButton()
         self.record_button.setObjectName("recordButton")
         self.record_button.setText("Click to Record")
-        self.record_button.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.record_button.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding
+        )
         self.record_button.setToolTip("Click or press F9 to toggle recording")
         self.record_button.clicked.connect(self._toggle_recording)
         self._register_toggleable_widget(self.record_button)
@@ -375,7 +501,9 @@ class MainWindow(QMainWindow):
 
         self.cancel_button = QPushButton("Cancel")
         self.cancel_button.setObjectName("cancelButton")
-        self.cancel_button.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        self.cancel_button.setSizePolicy(
+            QSizePolicy.Preferred, QSizePolicy.Expanding
+        )
         self.cancel_button.setToolTip("Cancel the current transcription")
         self.cancel_button.setVisible(False)
         self.cancel_button.clicked.connect(self._cancel_transcription)
@@ -400,7 +528,11 @@ class MainWindow(QMainWindow):
         self.task_combo.clear()
         if can_translate:
             self.task_combo.addItems(["Transcribe Mode", "Translate Mode"])
-            self.task_combo.setCurrentText(current if current in ["Transcribe Mode", "Translate Mode"] else "Transcribe Mode")
+            self.task_combo.setCurrentText(
+                current
+                if current in ["Transcribe Mode", "Translate Mode"]
+                else "Transcribe Mode"
+            )
         else:
             self.task_combo.addItems(["Transcribe Mode"])
             if current == "Translate Mode":
@@ -408,6 +540,73 @@ class MainWindow(QMainWindow):
                 self._save_config("task_mode", self.task_mode)
                 self.controller.set_task_mode(self.task_mode)
         self.task_combo.blockSignals(False)
+
+    def _update_model_status(self, text: str) -> None:
+        self.model_status_label.setText(text)
+
+    def _show_current_model_status(self) -> None:
+        if self._model_is_loaded:
+            name = self.loaded_model_settings.get("model_name", "")
+            quant = self.loaded_model_settings.get("quantization_type", "")
+            device = self.loaded_model_settings.get("device_type", "")
+            self._update_model_status(f"{name} ({quant} / {device})")
+        else:
+            self._update_model_status("No model loaded")
+
+    @staticmethod
+    def _format_bytes(num_bytes: int) -> str:
+        if num_bytes < 1024:
+            return f"{num_bytes} B"
+        elif num_bytes < 1024 * 1024:
+            return f"{num_bytes / 1024:.1f} KB"
+        elif num_bytes < 1024 * 1024 * 1024:
+            return f"{num_bytes / (1024 * 1024):.1f} MB"
+        else:
+            return f"{num_bytes / (1024 * 1024 * 1024):.2f} GB"
+
+    @Slot(str, int)
+    def _on_model_download_started(self, model_name: str, total_bytes: int) -> None:
+        self._is_loading_model = True
+        self._download_total_bytes = total_bytes
+        self.download_progress_bar.setValue(0)
+        self.download_progress_bar.setVisible(True)
+        self.cancel_download_button.setVisible(True)
+        total_str = self._format_bytes(total_bytes)
+        self._update_model_status(f"Downloading {model_name}... 0 B / {total_str}")
+
+    @Slot(int, int)
+    def _on_model_download_progress(self, downloaded: int, total: int) -> None:
+        if total > 0:
+            pct = int(downloaded / total * 10000)
+            self.download_progress_bar.setValue(pct)
+        dl_str = self._format_bytes(downloaded)
+        total_str = self._format_bytes(total)
+        self._update_model_status(f"Downloading... {dl_str} / {total_str}")
+
+    @Slot(str)
+    def _on_model_download_finished(self, model_name: str) -> None:
+        self.download_progress_bar.setVisible(False)
+        self.cancel_download_button.setVisible(False)
+        self._update_model_status(f"Loading {model_name}...")
+
+    @Slot()
+    def _on_model_download_cancelled(self) -> None:
+        self._is_loading_model = False
+        self.download_progress_bar.setVisible(False)
+        self.cancel_download_button.setVisible(False)
+        self._show_current_model_status()
+
+    @Slot(str)
+    def _on_model_loading_started(self, model_name: str) -> None:
+        self._is_loading_model = True
+        self.download_progress_bar.setVisible(False)
+        self.cancel_download_button.setVisible(False)
+        self._update_model_status(f"Loading {model_name}...")
+
+    @Slot()
+    def _cancel_model_download(self) -> None:
+        self.cancel_download_button.setEnabled(False)
+        self.controller.cancel_model_loading()
 
     @Slot()
     def _open_settings_dialog(self) -> None:
@@ -422,7 +621,9 @@ class MainWindow(QMainWindow):
         dlg.exec()
 
     @Slot(str, str, str)
-    def _on_settings_update_requested(self, model: str, quant: str, device: str) -> None:
+    def _on_settings_update_requested(
+        self, model: str, quant: str, device: str
+    ) -> None:
         self.controller.update_model(model, quant, device)
 
     @Slot()
@@ -437,21 +638,30 @@ class MainWindow(QMainWindow):
         self.resize(_DEFAULT_MAIN_WIDTH, _DEFAULT_MAIN_HEIGHT)
         self._center_on_screen()
 
-        self.clipboard_window.resize(_DEFAULT_CLIPBOARD_WIDTH, _DEFAULT_CLIPBOARD_HEIGHT)
+        self.clipboard_window.resize(
+            _DEFAULT_CLIPBOARD_WIDTH, _DEFAULT_CLIPBOARD_HEIGHT
+        )
 
         if self._clipboard_visible:
-            self.clipboard_window.dock_to_host(self._host_rect_global(), gap=_DOCK_GAP, animate=True)
+            self.clipboard_window.dock_to_host(
+                self._host_rect_global(), gap=_DOCK_GAP, animate=True
+            )
         else:
             self.clipboard_window.set_docked(True)
-
-        self.statusBar().showMessage("Window dimensions reset to defaults")
 
     @Slot(str)
     def _on_button_text_update(self, text: str) -> None:
         self.record_button.setText(text)
 
-        if "Transcribing" in text and "Done" not in text and "Failed" not in text and "Cancelled" not in text:
+        if (
+            "Transcribing" in text
+            and "Done" not in text
+            and "Failed" not in text
+            and "Cancelled" not in text
+        ):
             self.record_button.set_state(WaveformButton.TRANSCRIBING)
+            self.cancel_button.setVisible(True)
+            self.cancel_button.setEnabled(True)
 
     @Slot()
     def _on_clipboard_closed(self) -> None:
@@ -466,6 +676,11 @@ class MainWindow(QMainWindow):
     @Slot(str, str)
     def _show_error_dialog(self, title: str, message: str) -> None:
         logger.error(f"Error: {title} - {message}")
+        self._is_loading_model = False
+        self.download_progress_bar.setVisible(False)
+        self.cancel_download_button.setVisible(False)
+        self.cancel_download_button.setEnabled(True)
+        self._show_current_model_status()
         if "model" in title.lower():
             QMessageBox.critical(self, title, message)
         else:
@@ -473,18 +688,30 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _on_task_mode_changed(self) -> None:
-        self.task_mode = "translate" if "Translate" in self.task_combo.currentText() else "transcribe"
+        self.task_mode = (
+            "translate"
+            if "Translate" in self.task_combo.currentText()
+            else "transcribe"
+        )
         self._save_config("task_mode", self.task_mode)
         self.controller.set_task_mode(self.task_mode)
 
     @Slot(str, str, str)
-    def _on_model_loaded_success(self, model_name: str, quant: str, device: str) -> None:
+    def _on_model_loaded_success(
+        self, model_name: str, quant: str, device: str
+    ) -> None:
+        self._is_loading_model = False
+        self._model_is_loaded = True
         self.loaded_model_settings = {
             "model_name": model_name,
             "quantization_type": quant,
             "device_type": device,
         }
         self._update_translation_availability(model_name)
+        self._show_current_model_status()
+        self.download_progress_bar.setVisible(False)
+        self.cancel_download_button.setVisible(False)
+        self.cancel_download_button.setEnabled(True)
 
     @Slot()
     def _toggle_recording(self) -> None:
@@ -522,6 +749,7 @@ class MainWindow(QMainWindow):
     def _on_transcription_cancelled(self) -> None:
         self.record_button.set_state(WaveformButton.IDLE)
         self.cancel_button.setEnabled(True)
+        self.cancel_button.setVisible(False)
 
     def _is_supported_audio_file(self, path: str) -> bool:
         try:
@@ -531,23 +759,29 @@ class MainWindow(QMainWindow):
 
     def _transcribe_specific_file(self, file_path: str) -> None:
         if not file_path or not self._is_supported_audio_file(file_path):
-            self.statusBar().showMessage("Unsupported file type")
-            QMessageBox.warning(self, "Unsupported File", "Please select a supported audio file.")
+            QMessageBox.warning(
+                self, "Unsupported File", "Please select a supported audio file."
+            )
             return
 
         if not self.transcribe_file_button.isEnabled():
-            self.statusBar().showMessage("Busy")
             return
 
         dlg = BatchSizeDialog(self, default_value=16)
         if dlg.exec() == QDialog.Accepted:
-            logger.info(f"Transcribing: {file_path} (batch={dlg.batch_size()})")
-            self.controller.transcribe_file(file_path, batch_size=dlg.batch_size())
+            logger.info(
+                f"Transcribing: {file_path} (batch={dlg.batch_size()})"
+            )
+            self.controller.transcribe_file(
+                file_path, batch_size=dlg.batch_size()
+            )
 
     @Slot()
     def _select_and_transcribe_file(self) -> None:
         exts = " ".join(f"*{ext}" for ext in SUPPORTED_AUDIO_EXTENSIONS)
-        path, _ = QFileDialog.getOpenFileName(self, "Select Audio File", "", f"Audio Files ({exts});;All Files (*)")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select Audio File", "", f"Audio Files ({exts});;All Files (*)"
+        )
         if path:
             self._transcribe_specific_file(path)
 
@@ -568,7 +802,9 @@ class MainWindow(QMainWindow):
             self.clipboard_window.hide_animated(host_rect, gap=_DOCK_GAP)
 
     def _update_clipboard_button_text(self) -> None:
-        self.clipboard_button.setText("Hide Clipboard" if self._clipboard_visible else "Show Clipboard")
+        self.clipboard_button.setText(
+            "Hide Clipboard" if self._clipboard_visible else "Show Clipboard"
+        )
 
     def _register_toggleable_widget(self, widget: QWidget) -> None:
         self._toggleable_widgets.append(widget)
@@ -580,7 +816,11 @@ class MainWindow(QMainWindow):
         self.clipboard_window.add_transcription(text)
 
         if app := QApplication.instance():
-            clip_text = self.clipboard_window.get_full_text() if self.clipboard_window.is_append_mode() else text
+            clip_text = (
+                self.clipboard_window.get_full_text()
+                if self.clipboard_window.is_append_mode()
+                else text
+            )
             app.clipboard().setText(clip_text)
 
         if self.is_recording:
@@ -593,8 +833,9 @@ class MainWindow(QMainWindow):
             if hasattr(widget, "setEnabled"):
                 widget.setEnabled(enabled)
 
-        self.cancel_button.setVisible(not enabled)
-        self.cancel_button.setEnabled(True)
+        if enabled:
+            self.cancel_button.setVisible(False)
+            self.cancel_button.setEnabled(True)
 
         if not enabled and self.is_recording:
             self._sample_timer.stop()
@@ -609,12 +850,16 @@ class MainWindow(QMainWindow):
         if not (md := event.mimeData()) or not md.hasUrls():
             return None
         for url in md.urls():
-            if url.isLocalFile() and self._is_supported_audio_file(p := url.toLocalFile()):
+            if url.isLocalFile() and self._is_supported_audio_file(
+                p := url.toLocalFile()
+            ):
                 return p
         return None
 
     def eventFilter(self, obj, event):
-        if obj is not self and not (isinstance(obj, QWidget) and self.isAncestorOf(obj)):
+        if obj is not self and not (
+            isinstance(obj, QWidget) and self.isAncestorOf(obj)
+        ):
             return super().eventFilter(obj, event)
 
         et = event.type()
@@ -632,7 +877,10 @@ class MainWindow(QMainWindow):
     def _sync_clipboard_position(self) -> None:
         host_rect = self._host_rect_global()
         self.clipboard_window.update_host_rect(host_rect)
-        if self.clipboard_window.isVisible() and self.clipboard_window.is_docked():
+        if (
+            self.clipboard_window.isVisible()
+            and self.clipboard_window.is_docked()
+        ):
             self.clipboard_window.reposition_to_host(host_rect, gap=_DOCK_GAP)
 
     def moveEvent(self, event):

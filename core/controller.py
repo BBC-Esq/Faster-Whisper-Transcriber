@@ -17,13 +17,17 @@ logger = get_logger(__name__)
 
 
 class TranscriberController(QObject):
-    update_status_signal = Signal(str)
     update_button_signal = Signal(str)
     enable_widgets_signal = Signal(bool)
     text_ready_signal = Signal(str)
     model_loaded_signal = Signal(str, str, str)
     error_occurred = Signal(str, str)
     transcription_cancelled_signal = Signal()
+    model_download_started = Signal(str, int)
+    model_download_progress = Signal(int, int)
+    model_download_finished = Signal(str)
+    model_download_cancelled = Signal()
+    model_loading_started = Signal(str)
 
     def __init__(
         self,
@@ -43,12 +47,13 @@ class TranscriberController(QObject):
         curate_enabled = config_manager.get_value("curate_transcription", True)
         self.transcription_service = transcription_service or TranscriptionService(
             curate_text_enabled=curate_enabled,
-            task_mode=task_mode
+            task_mode=task_mode,
         )
-        self.transcription_service.set_model_version_provider(self._get_current_model_version)
+        self.transcription_service.set_model_version_provider(
+            self._get_current_model_version
+        )
 
         self._connect_signals()
-        self._load_settings()
         logger.info("TranscriberController initialized")
 
     def _get_current_model_version(self) -> str | None:
@@ -57,11 +62,15 @@ class TranscriberController(QObject):
 
     def set_task_mode(self, mode: str) -> None:
         self.transcription_service.set_task_mode(mode)
-        self.update_status_signal.emit(f"Mode: {mode.capitalize()}")
 
     def _connect_signals(self) -> None:
         self.model_manager.model_loaded.connect(self._on_model_loaded)
         self.model_manager.model_error.connect(self._on_model_error)
+        self.model_manager.download_started.connect(self._on_download_started)
+        self.model_manager.download_progress.connect(self._on_download_progress)
+        self.model_manager.download_finished.connect(self._on_download_finished)
+        self.model_manager.download_cancelled.connect(self._on_download_cancelled)
+        self.model_manager.loading_started.connect(self._on_loading_started)
 
         self.audio_manager.recording_started.connect(
             lambda: self.update_button_signal.emit("Recording...")
@@ -72,15 +81,25 @@ class TranscriberController(QObject):
         self.transcription_service.transcription_started.connect(
             lambda: self.update_button_signal.emit("Transcribing...")
         )
-        self.transcription_service.transcription_progress.connect(self._on_transcription_progress)
-        self.transcription_service.transcription_completed.connect(self._on_transcription_completed)
-        self.transcription_service.transcription_error.connect(self._on_transcription_error)
-        self.transcription_service.transcription_cancelled.connect(self._on_transcription_cancelled)
+        self.transcription_service.transcription_progress.connect(
+            self._on_transcription_progress
+        )
+        self.transcription_service.transcription_completed.connect(
+            self._on_transcription_completed
+        )
+        self.transcription_service.transcription_error.connect(
+            self._on_transcription_error
+        )
+        self.transcription_service.transcription_cancelled.connect(
+            self._on_transcription_cancelled
+        )
 
     def update_model(self, model_name: str, quant: str, device: str) -> None:
         self.enable_widgets_signal.emit(False)
-        self.update_status_signal.emit(f"Loading model {model_name}...")
         self.model_manager.load_model(model_name, quant, device)
+
+    def cancel_model_loading(self) -> None:
+        self.model_manager.cancel_loading()
 
     def start_recording(self) -> None:
         if not self.audio_manager.start_recording():
@@ -102,7 +121,9 @@ class TranscriberController(QObject):
         model, model_version = self.model_manager.get_model()
         if model and model_version:
             self.enable_widgets_signal.emit(False)
-            self.update_button_signal.emit(f"Transcribing {Path(file_path).name}...")
+            self.update_button_signal.emit(
+                f"Transcribing {Path(file_path).name}..."
+            )
             self.transcription_service.transcribe_file(
                 model,
                 model_version,
@@ -111,8 +132,30 @@ class TranscriberController(QObject):
                 batch_size=batch_size,
             )
         else:
-            self.update_status_signal.emit("No model loaded")
-            self.error_occurred.emit("Transcription Error", "No model is loaded to process audio")
+            self.error_occurred.emit(
+                "Transcription Error", "No model is loaded to process audio"
+            )
+
+    @Slot(str, int)
+    def _on_download_started(self, model_name: str, total_bytes: int) -> None:
+        self.model_download_started.emit(model_name, total_bytes)
+
+    @Slot(int, int)
+    def _on_download_progress(self, downloaded: int, total: int) -> None:
+        self.model_download_progress.emit(downloaded, total)
+
+    @Slot(str)
+    def _on_download_finished(self, model_name: str) -> None:
+        self.model_download_finished.emit(model_name)
+
+    @Slot()
+    def _on_download_cancelled(self) -> None:
+        self.enable_widgets_signal.emit(True)
+        self.model_download_cancelled.emit()
+
+    @Slot(str)
+    def _on_loading_started(self, model_name: str) -> None:
+        self.model_loading_started.emit(model_name)
 
     @Slot(str, str, str)
     def _on_model_loaded(self, name: str, quant: str, device: str) -> None:
@@ -121,14 +164,12 @@ class TranscriberController(QObject):
         except Exception as e:
             logger.warning(f"Failed to save model settings: {e}")
 
-        self.update_status_signal.emit(f"Model {name} ready on {device}")
         self.enable_widgets_signal.emit(True)
         self.model_loaded_signal.emit(name, quant, device)
 
     @Slot(str)
     def _on_model_error(self, error: str) -> None:
         logger.error(f"Model error: {error}")
-        self.update_status_signal.emit("Model load failed")
         self.enable_widgets_signal.emit(True)
         self.error_occurred.emit("Model Error", error)
 
@@ -144,19 +185,21 @@ class TranscriberController(QObject):
                 batch_size=None,
             )
         else:
-            self.update_status_signal.emit("No model loaded")
             self.enable_widgets_signal.emit(True)
-            self.error_occurred.emit("Audio Error", "No model is loaded to process audio")
+            self.error_occurred.emit(
+                "Audio Error", "No model is loaded to process audio"
+            )
 
     @Slot(str)
     def _on_audio_error(self, error: str) -> None:
         logger.error(f"Audio error: {error}")
-        self.update_status_signal.emit("Recording failed")
         self.enable_widgets_signal.emit(True)
         self.error_occurred.emit("Audio Error", error)
 
     @Slot(int, int, float)
-    def _on_transcription_progress(self, segment_num: int, total_segments: int, percent: float) -> None:
+    def _on_transcription_progress(
+        self, segment_num: int, total_segments: int, percent: float
+    ) -> None:
         if percent >= 0:
             self.update_button_signal.emit(f"Transcribing... {percent:.0f}%")
         else:
@@ -180,14 +223,6 @@ class TranscriberController(QObject):
         self.update_button_signal.emit("Click to Record")
         self.enable_widgets_signal.emit(True)
         self.transcription_cancelled_signal.emit()
-
-    def _load_settings(self) -> None:
-        settings = config_manager.get_model_settings()
-        self.update_model(
-            settings["model_name"],
-            settings["quantization_type"],
-            settings["device_type"]
-        )
 
     def stop_all_threads(self) -> None:
         logger.info("Stopping all threads")
