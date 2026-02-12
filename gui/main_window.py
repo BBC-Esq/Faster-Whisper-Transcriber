@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Slot, QRect, QEvent, Signal, QSettings, QByteArray, QTimer
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QApplication,
     QMainWindow,
@@ -96,7 +97,7 @@ class MainWindow(QMainWindow):
     hotkey_toggle_recording = Signal()
 
     DEFAULTS = {
-        "model": "base.en",
+        "model": "base",
         "device": "cpu",
         "quantization": "float32",
         "task_mode": "transcribe",
@@ -614,6 +615,11 @@ class MainWindow(QMainWindow):
         return None
 
     def eventFilter(self, obj, event):
+        # Block StatusTip events from menu/actions to preserve statusBar message
+        if event.type() == QEvent.StatusTip:
+            if isinstance(obj, (QAction, QMenu, QMenuBar)):
+                return True  # Block event to prevent statusBar from being cleared
+        
         if obj is not self and not (isinstance(obj, QWidget) and self.isAncestorOf(obj)):
             return super().eventFilter(obj, event)
 

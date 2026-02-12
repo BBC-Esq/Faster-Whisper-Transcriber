@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+import shutil
+from pathlib import Path
+
+from PySide6.QtCore import Signal, Slot
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -9,9 +12,17 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFormLayout,
     QWidget,
+    QLabel,
+    QFileDialog,
+    QMessageBox,
+    QSizePolicy,
+    QStyle,
 )
 
 from core.models.metadata import ModelMetadata
+from core.models.download import list_local_models, get_local_model_path, get_models_directory
+from core.models.loader import _make_repo_string, _extract_model_name_from_repo
+from config.manager import config_manager
 from gui.styles import update_button_property
 from core.logging_config import get_logger
 
@@ -40,6 +51,7 @@ class SettingsDialog(QDialog):
 
         self._build_ui()
         self._setup_connections()
+        self._update_models_folder_label()
         self._populate_from_settings()
         self._check_for_changes()
 
@@ -48,13 +60,48 @@ class SettingsDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
+        # Models folder selection row (at the top)
+        folder_row = QHBoxLayout()
+        folder_row.setSpacing(10)
+        
+        self.models_folder_btn = QPushButton("Models Folder...")
+        self.models_folder_btn.setToolTip("Choose folder for storing models")
+        self.models_folder_btn.clicked.connect(self._on_models_folder_clicked)
+        self.models_folder_btn.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        folder_row.addWidget(self.models_folder_btn)
+        
+        self.models_folder_label = QLabel()
+        self.models_folder_label.setStyleSheet("color: gray; font-size: 10pt;")
+        folder_row.addWidget(self.models_folder_label, 1)
+        folder_row.addStretch()
+        
+        layout.addLayout(folder_row)
+
         form = QFormLayout()
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(10)
 
+        # Model dropdown with delete button
+        model_row = QHBoxLayout()
+        model_row.setSpacing(5)
+
         self.model_dropdown = QComboBox()
-        self.model_dropdown.addItems(ModelMetadata.get_all_model_names())
-        form.addRow("Model", self.model_dropdown)
+        self.model_dropdown.setToolTip("Choose a Whisper model (✓ = downloaded, ⬇ = needs download)")
+        model_row.addWidget(self.model_dropdown, 1)  # stretch factor 1
+
+        # Delete button (trash icon)
+        self.delete_model_btn = QPushButton()
+        self.delete_model_btn.setIcon(
+            self.style().standardIcon(QStyle.StandardPixmap.SP_TrashIcon)
+        )
+        self.delete_model_btn.setMaximumWidth(32)
+        self.delete_model_btn.setMaximumHeight(32)
+        self.delete_model_btn.setEnabled(False)  # Disabled by default
+        self.delete_model_btn.setToolTip("Delete selected model")
+        self.delete_model_btn.clicked.connect(self._on_delete_model_clicked)
+        model_row.addWidget(self.delete_model_btn)
+
+        form.addRow("Model", model_row)
 
         self.device_dropdown = QComboBox()
         devices = ["cpu", "cuda"] if self.cuda_available else ["cpu"]
@@ -63,6 +110,9 @@ class SettingsDialog(QDialog):
 
         self.quantization_dropdown = QComboBox()
         form.addRow("Precision", self.quantization_dropdown)
+        
+        # Populate model dropdown after all widgets are created
+        self._populate_model_dropdown()
 
         layout.addLayout(form)
 
@@ -99,17 +149,28 @@ class SettingsDialog(QDialog):
         self.model_dropdown.currentTextChanged.connect(self._check_for_changes)
         self.device_dropdown.currentTextChanged.connect(self._check_for_changes)
         self.quantization_dropdown.currentTextChanged.connect(self._check_for_changes)
+        self.quantization_dropdown.currentTextChanged.connect(self._refresh_model_dropdown)
 
     def _populate_from_settings(self) -> None:
-        self.model_dropdown.setCurrentText(self.current_settings.get("model_name", "base.en"))
+        model = self.current_settings.get("model_name", "base")
+        
+        # Find model by itemData (not display text with indicators)
+        for i in range(self.model_dropdown.count()):
+            if self.model_dropdown.itemData(i) == model:
+                self.model_dropdown.setCurrentIndex(i)
+                break
+        
         self.device_dropdown.setCurrentText(self.current_settings.get("device_type", "cpu"))
         self._update_quantization_options()
         self.quantization_dropdown.setCurrentText(
-            self.current_settings.get("quantization_type", "float32")
+            self.current_settings.get("quantization_type", "float16")
         )
+        
+        # Update delete button state
+        self._update_delete_button_state()
 
     def _update_quantization_options(self) -> None:
-        model = self.model_dropdown.currentText()
+        model = self._get_current_model_name()
         device = self.device_dropdown.currentText()
         opts = ModelMetadata.get_quantization_options(model, device, self.supported_quantizations)
 
@@ -122,11 +183,13 @@ class SettingsDialog(QDialog):
         elif opts:
             self.quantization_dropdown.setCurrentText(opts[0])
         self.quantization_dropdown.blockSignals(False)
+        
+        self._refresh_model_dropdown()  # Update indicators for current quantization
         self._check_for_changes()
 
     def _check_for_changes(self) -> None:
         current = {
-            "model_name": self.model_dropdown.currentText(),
+            "model_name": self._get_current_model_name(),
             "quantization_type": self.quantization_dropdown.currentText(),
             "device_type": self.device_dropdown.currentText(),
         }
@@ -136,11 +199,266 @@ class SettingsDialog(QDialog):
         update_button_property(self.update_btn, "changed", has_changes)
 
     def _on_update_clicked(self) -> None:
-        model = self.model_dropdown.currentText()
+        model = self._get_current_model_name()
         quant = self.quantization_dropdown.currentText()
         device = self.device_dropdown.currentText()
         self.model_update_requested.emit(model, quant, device)
         self.accept()
+
+    def _get_current_model_name(self) -> str:
+        """Get the real model name from dropdown (without ✓/⬇ indicator)."""
+        index = self.model_dropdown.currentIndex()
+        model_name = self.model_dropdown.itemData(index)
+        if model_name is not None:
+            return model_name
+        # Fallback: strip indicator from display text
+        text = self.model_dropdown.currentText()
+        if text.startswith(("✓ ", "⬇ ")):
+            return text[2:].strip()
+        return text
+
+    def _populate_model_dropdown(self) -> None:
+        """Populate model dropdown with availability indicators (✓ = downloaded, ⬇ = needs download).
+        
+        Indicator shows availability for the CURRENTLY SELECTED quantization.
+        If no quantization selected (initial load), checks for any quantization.
+        """
+        local_models = set(list_local_models())
+        self.model_dropdown.clear()
+
+        # Get current quantization if available
+        current_quant = None
+        if self.quantization_dropdown.count() > 0:
+            current_quant = self.quantization_dropdown.currentText()
+
+        for model_name in ModelMetadata.get_all_model_names():
+            has_model = False
+
+            if current_quant:
+                # Check for specific quantization
+                repo_id = _make_repo_string(model_name, current_quant)
+                local_name = _extract_model_name_from_repo(repo_id)
+                has_model = local_name in local_models
+            else:
+                # Check for any quantization (initial load)
+                for quant in ["float32", "float16", "bfloat16", "int8", "int8_float32", "int8_float16", "int8_bfloat16"]:
+                    try:
+                        repo_id = _make_repo_string(model_name, quant)
+                        local_name = _extract_model_name_from_repo(repo_id)
+                        if local_name in local_models:
+                            has_model = True
+                            break
+                    except:
+                        pass
+
+            display_name = f"✓ {model_name}" if has_model else f"⬇ {model_name}"
+            self.model_dropdown.addItem(display_name, model_name)
+
+    def _refresh_model_dropdown(self) -> None:
+        """Refresh model dropdown indicators (e.g. after quantization change)."""
+        current_model = self._get_current_model_name()
+        
+        # Block signals to prevent recursion (setCurrentIndex triggers currentTextChanged)
+        self.model_dropdown.blockSignals(True)
+        self._populate_model_dropdown()
+
+        for i in range(self.model_dropdown.count()):
+            if self.model_dropdown.itemData(i) == current_model:
+                self.model_dropdown.setCurrentIndex(i)
+                break
+        
+        self.model_dropdown.blockSignals(False)
+        
+        # Update delete button state
+        self._update_delete_button_state()
+
+    def _estimate_model_size(self, model_name: str, quant: str) -> str:
+        """Estimate model download size."""
+        sizes: dict[str, str] = {
+            "tiny": "40 MB",
+            "base": "75 MB",
+            "small": "250 MB",
+            "medium": "800 MB",
+            "large-v3": "1.5 GB",
+            "large-v3-turbo": "800 MB",
+            "distil-whisper-large-v3": "800 MB",
+        }
+        return sizes.get(model_name, "~1 GB")
+
+    def _on_models_folder_clicked(self) -> None:
+        """Handle Models Folder button click."""
+        # Get current directory
+        current_dir = get_models_directory()
+        
+        # Show folder selection dialog
+        folder = QFileDialog.getExistingDirectory(
+            self,
+            "Select Models Folder",
+            str(current_dir),
+            QFileDialog.ShowDirsOnly | QFileDialog.DontResolveSymlinks
+        )
+        
+        if not folder:
+            return  # User cancelled
+        
+        folder_path = Path(folder)
+        
+        # Validate folder (check if it's writable)
+        if not self._validate_models_folder(folder_path):
+            return
+        
+        # Save to config
+        config_manager.set_models_directory(str(folder_path))
+        
+        # Update label
+        self._update_models_folder_label()
+        
+        # Refresh model dropdown (models might be different in new folder)
+        self._refresh_model_dropdown()
+        
+        logger.info(f"Models folder changed to: {folder_path}")
+
+    def _validate_models_folder(self, folder_path: Path) -> bool:
+        """Validate that the selected folder is suitable for storing models."""
+        # Check if folder exists or can be created
+        if not folder_path.exists():
+            try:
+                folder_path.mkdir(parents=True, exist_ok=True)
+                logger.info(f"Created models folder: {folder_path}")
+            except Exception as e:
+                QMessageBox.critical(
+                    self,
+                    "Invalid Folder",
+                    f"Cannot create folder:\n{folder_path}\n\nError: {e}"
+                )
+                return False
+        
+        # Check if folder is writable
+        if not folder_path.is_dir():
+            QMessageBox.critical(
+                self,
+                "Invalid Folder",
+                f"Selected path is not a folder:\n{folder_path}"
+            )
+            return False
+        
+        # Try to write a test file
+        test_file = folder_path / ".write_test"
+        try:
+            test_file.write_text("test")
+            test_file.unlink()
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                "Folder Not Writable",
+                f"Cannot write to folder:\n{folder_path}\n\nError: {e}"
+            )
+            return False
+        
+        return True
+
+    def _update_models_folder_label(self) -> None:
+        """Update the label showing current models folder."""
+        current_dir = get_models_directory()
+        custom_dir = config_manager.get_models_directory()
+        
+        if custom_dir:
+            # Show shortened path if too long
+            path_str = str(current_dir)
+            if len(path_str) > 40:
+                path_str = "..." + path_str[-37:]
+            self.models_folder_label.setText(f"📁 {path_str}")
+            self.models_folder_label.setToolTip(f"Current models folder:\n{current_dir}")
+        else:
+            self.models_folder_label.setText("📁 Default (models/)")
+            self.models_folder_label.setToolTip(f"Using default models folder:\n{current_dir}")
+
+    def _update_delete_button_state(self) -> None:
+        """Enable/disable delete button based on selected model."""
+        display_text = self.model_dropdown.currentText()
+        is_downloaded = display_text.startswith("✓")
+        self.delete_model_btn.setEnabled(is_downloaded)
+
+    @Slot()
+    def _on_delete_model_clicked(self) -> None:
+        """Handle delete button click."""
+        model_name = self._get_current_model_name()
+        quant = self.quantization_dropdown.currentText()
+        
+        if self._show_delete_confirmation(model_name, quant):
+            self._delete_model(model_name, quant)
+
+    def _show_delete_confirmation(self, model_name: str, quant: str) -> bool:
+        """Show confirmation dialog with model size."""
+        # Calculate model size
+        model_size = self._get_model_folder_size(model_name, quant)
+        size_text = self._format_size(model_size) if model_size else "Unknown size"
+        
+        msg = QMessageBox(self)
+        msg.setIcon(QMessageBox.Warning)
+        msg.setWindowTitle("Delete Model")
+        msg.setText(f"Delete model '{model_name}' ({quant})?")
+        msg.setInformativeText(
+            f"This will permanently delete the model folder.\n\n"
+            f"Size: ~{size_text} will be freed.\n\n"
+            f"Are you sure?"
+        )
+        msg.setStandardButtons(QMessageBox.Yes | QMessageBox.No)
+        msg.setDefaultButton(QMessageBox.No)
+        
+        return msg.exec() == QMessageBox.Yes
+
+    def _delete_model(self, model_name: str, quant: str) -> None:
+        """Delete model folder."""
+        repo_id = _make_repo_string(model_name, quant)
+        local_name = _extract_model_name_from_repo(repo_id)
+        model_path = get_models_directory() / local_name
+        
+        try:
+            if model_path.exists() and model_path.is_dir():
+                shutil.rmtree(model_path)
+                logger.info(f"Deleted model: {model_path}")
+                
+                # Refresh dropdown to update indicators (no success message)
+                self._refresh_model_dropdown()
+            else:
+                logger.warning(f"Model path not found: {model_path}")
+        except Exception as e:
+            logger.error(f"Failed to delete model {model_path}: {e}")
+            QMessageBox.critical(
+                self,
+                "Deletion Failed",
+                f"Failed to delete model:\n{e}"
+            )
+
+    def _get_model_folder_size(self, model_name: str, quant: str) -> int:
+        """Get size of model folder in bytes."""
+        try:
+            repo_id = _make_repo_string(model_name, quant)
+            local_name = _extract_model_name_from_repo(repo_id)
+            model_path = get_models_directory() / local_name
+            
+            if model_path.exists() and model_path.is_dir():
+                total_size = 0
+                for file in model_path.rglob('*'):
+                    if file.is_file():
+                        total_size += file.stat().st_size
+                return total_size
+        except Exception as e:
+            logger.warning(f"Failed to calculate model size: {e}")
+        
+        return 0
+
+    def _format_size(self, size_bytes: int) -> str:
+        """Format size in human-readable format."""
+        if size_bytes < 1024:
+            return f"{size_bytes} B"
+        elif size_bytes < 1024 ** 2:
+            return f"{size_bytes / 1024:.1f} KB"
+        elif size_bytes < 1024 ** 3:
+            return f"{size_bytes / (1024 ** 2):.1f} MB"
+        else:
+            return f"{size_bytes / (1024 ** 3):.2f} GB"
 
     def _on_reset_dimensions_clicked(self) -> None:
         self.reset_dimensions_requested.emit()

@@ -62,9 +62,10 @@ class AudioManager(QObject):
     @Slot(str)
     def _on_recording_finished(self, audio_file: str) -> None:
         try:
-            self._current_temp_file = None
+            self._current_temp_file = Path(audio_file)
             logger.info(f"Audio saved to: {audio_file}")
             self.audio_ready.emit(str(audio_file))
+            self._current_temp_file = None  # TranscriptionService will release the temp file
         except Exception as e:
             logger.exception("Unexpected error finishing audio")
             self.audio_error.emit(f"Failed to finalize audio: {e}")

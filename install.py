@@ -2,6 +2,7 @@ import sys
 import subprocess
 import time
 import os
+from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox
 
@@ -104,19 +105,34 @@ def upgrade_pip_setuptools_wheel(max_retries=5, delay=3):
                     print(f"Retrying in {delay} seconds...")
                     time.sleep(delay)
 
-def build_library_list():
-    all_libs = list(libs)
+def install_gpu_libraries_to_cuda_lib(gpu_packages, max_retries=5, delay=3):
+    """Install GPU libraries to cuda_lib/ directory."""
+    cuda_lib_path = Path(__file__).parent / "cuda_lib"
+    cuda_lib_path.mkdir(exist_ok=True)
+    
+    print(f"\033[92mInstalling {len(gpu_packages)} GPU libraries to cuda_lib/:\033[0m")
+    command = ["uv", "pip", "install", "--target", str(cuda_lib_path)] + gpu_packages
+    
+    for attempt in range(max_retries):
+        try:
+            print(f"\nAttempt {attempt + 1} of {max_retries}: Installing GPU libraries...")
+            subprocess.run(command, check=True, text=True, timeout=1800)
+            print(f"\033[92mSuccessfully installed GPU libraries to cuda_lib/\033[0m")
+            return True, attempt + 1
+        except subprocess.CalledProcessError as e:
+            print(f"Attempt {attempt + 1} failed.")
+            if e.stderr:
+                print(f"Error: {e.stderr.strip()}")
+            if attempt < max_retries - 1:
+                print(f"Retrying in {delay} seconds...")
+                time.sleep(delay)
+    
+    return False, max_retries
 
-    if hardware_type == "GPU":
-        if python_version not in gpu_libs:
-            tkinter_message_box("Version Error", f"No GPU libraries configured for Python {python_version}", type="error")
-            sys.exit(1)
-        all_libs = gpu_libs[python_version] + all_libs
-
-    return all_libs
-
-def install_libraries(libraries, max_retries=5, delay=3):
-    command = ["uv", "pip", "install"] + libraries
+def install_regular_libraries(packages, max_retries=5, delay=3):
+    """Install regular libraries to standard site-packages."""
+    print(f"\033[92mInstalling {len(packages)} regular libraries:\033[0m")
+    command = ["uv", "pip", "install"] + packages
 
     for attempt in range(max_retries):
         try:
@@ -133,6 +149,48 @@ def install_libraries(libraries, max_retries=5, delay=3):
                 time.sleep(delay)
 
     return False, max_retries
+
+def offer_model_download():
+    """Offer to download Whisper models after installation."""
+    message = (
+        "Installation complete!\n\n"
+        "Would you like to download Whisper models now?\n\n"
+        "Models will be downloaded to the 'models/' folder.\n"
+        "You can also download them later using download_models.py\n\n"
+        "Download models now?"
+    )
+    
+    if tkinter_message_box("Model Download", message, yes_no=True):
+        # Ask which models to download
+        choice_message = (
+            "Which models would you like to download?\n\n"
+            "• Recommended: large-v3-turbo (fastest, good quality, ~800 MB)\n"
+            "• All models: Download all available models (~10 GB)\n"
+            "• Skip: Download later manually\n\n"
+            "Download recommended model?"
+        )
+        
+        if tkinter_message_box("Model Selection", choice_message, yes_no=True):
+            print("\n\033[92mDownloading recommended model (large-v3-turbo)...\033[0m")
+            try:
+                result = subprocess.run(
+                    [sys.executable, "download_models.py", "--model", "large-v3-turbo", "--quant", "bfloat16"],
+                    check=True,
+                    capture_output=False,
+                    text=True,
+                    timeout=3600  # 1 hour timeout for large downloads
+                )
+                print("\033[92mModel downloaded successfully!\033[0m")
+            except subprocess.TimeoutExpired:
+                print("\033[91mModel download timed out. Please download manually later.\033[0m")
+            except subprocess.CalledProcessError:
+                print("\033[91mModel download failed. You can download later using download_models.py\033[0m")
+            except Exception as e:
+                print(f"\033[91mModel download error: {e}\033[0m")
+        else:
+            print("\n\033[93mSkipping model download. You can download later using:\033[0m")
+            print("  python download_models.py --model large-v3-turbo")
+            print("  python download_models.py --list")
 
 def main():
     enable_ansi_colors()
@@ -153,15 +211,37 @@ def main():
     print("\033[92mUpgrading pip, setuptools, and wheel:\033[0m")
     upgrade_pip_setuptools_wheel()
 
-    all_libs = build_library_list()
-    print(f"\033[92mInstalling {len(all_libs)} libraries ({hardware_type} configuration):\033[0m")
-    success, attempts = install_libraries(all_libs)
+    # Install GPU libraries to cuda_lib/ if GPU detected
+    gpu_success = True
+    gpu_attempts = 0
+    if hardware_type == "GPU":
+        if python_version not in gpu_libs:
+            tkinter_message_box("Version Error", f"No GPU libraries configured for Python {python_version}", type="error")
+            sys.exit(1)
+        
+        gpu_packages = gpu_libs[python_version]
+        gpu_success, gpu_attempts = install_gpu_libraries_to_cuda_lib(gpu_packages)
+        
+        if not gpu_success:
+            print(f"\033[91mGPU libraries installation failed after {gpu_attempts} attempts.\033[0m")
+            sys.exit(1)
+
+    # Install regular libraries to site-packages
+    print(f"\n\033[92mInstalling regular libraries ({hardware_type} configuration):\033[0m")
+    regular_success, regular_attempts = install_regular_libraries(libs)
 
     print("\n----- Installation Summary -----")
-    if not success:
-        print(f"\033[91mInstallation failed after {attempts} attempts.\033[0m")
-    elif attempts > 1:
-        print(f"\033[93mAll libraries installed successfully after {attempts} attempts.\033[0m")
+    
+    if hardware_type == "GPU":
+        if gpu_attempts > 1:
+            print(f"\033[93mGPU libraries installed to cuda_lib/ after {gpu_attempts} attempts.\033[0m")
+        else:
+            print(f"\033[92mGPU libraries installed to cuda_lib/ on the first attempt.\033[0m")
+    
+    if not regular_success:
+        print(f"\033[91mRegular libraries installation failed after {regular_attempts} attempts.\033[0m")
+    elif regular_attempts > 1:
+        print(f"\033[93mRegular libraries installed successfully after {regular_attempts} attempts.\033[0m")
     else:
         print("\033[92mAll libraries installed successfully on the first attempt.\033[0m")
 
@@ -170,6 +250,10 @@ def main():
     hours, rem = divmod(total_time, 3600)
     minutes, seconds = divmod(rem, 60)
     print(f"\033[92m\nTotal installation time: {int(hours):02d}:{int(minutes):02d}:{seconds:05.2f}\033[0m")
+    
+    # Offer to download models
+    if regular_success:
+        offer_model_download()
 
 if __name__ == "__main__":
     main()
