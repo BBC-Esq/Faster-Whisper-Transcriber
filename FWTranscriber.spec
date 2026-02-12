@@ -3,6 +3,8 @@
 # This configuration creates a single .exe file (onefile mode)
 # External folders cuda_lib/, models/ and config.yaml must be placed next to the .exe
 
+from PyInstaller.utils.hooks import collect_data_files
+
 block_cipher = None
 
 a = Analysis(
@@ -11,8 +13,9 @@ a = Analysis(
     binaries=[],
     datas=[
         ('qt.conf', '.'),          # Copy qt.conf for DPI awareness configuration
-        # NOTE: cuda_lib/ and models/ are NOT included in datas - they must be external
-    ],
+        # Include faster-whisper VAD model for batch transcription
+    ] + collect_data_files('faster_whisper'),
+    # NOTE: cuda_lib/ and models/ are NOT included in datas - they must be external
     hiddenimports=[
         'ctranslate2',
         'faster_whisper',
