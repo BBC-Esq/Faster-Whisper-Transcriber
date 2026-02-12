@@ -46,8 +46,13 @@ class ModelMetadata:
         info = cls._MODEL_MAP.get(model_name)
 
         if info and info.quantization_overrides:
-            options = info.quantization_overrides.get(device, [])
+            # Model has quantization restrictions - use intersection with GPU capabilities
+            model_options = info.quantization_overrides.get(device, [])
+            gpu_options = supported_quantizations.get(device, [])
+            # Show only what BOTH model AND GPU support
+            options = [opt for opt in model_options if opt in gpu_options]
         else:
+            # No model restrictions - use all GPU-supported quantizations
             options = supported_quantizations.get(device, [])
 
         if device == "cpu":

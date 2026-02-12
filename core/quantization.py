@@ -18,10 +18,41 @@ class CheckQuantizationSupport:
             logger.warning(f"Failed to check CUDA devices: {e}")
             return False
 
+    def is_bfloat16_supported(self) -> bool:
+        """Check if GPU hardware supports bfloat16 (compute capability >= 8.0).
+        
+        Returns:
+            True if GPU supports bfloat16, False otherwise
+        """
+        if not self.has_cuda_device():
+            return False
+        
+        try:
+            # ctranslate2 checks actual hardware support
+            cuda_types = ctranslate2.get_supported_compute_types("cuda")
+            is_supported = "bfloat16" in cuda_types
+            
+            if is_supported:
+                logger.info("GPU supports bfloat16 (Ampere or newer)")
+            else:
+                logger.info("GPU does not support bfloat16 (requires Ampere/compute capability 8.0+)")
+            
+            return is_supported
+        except Exception as e:
+            logger.warning(f"Failed to check bfloat16 support: {e}")
+            return False
+
     def get_supported_quantizations_cuda(self) -> list[str]:
         try:
             cuda_quantizations = ctranslate2.get_supported_compute_types("cuda")
-            return [q for q in cuda_quantizations if q not in self.excluded_types]
+            result = [q for q in cuda_quantizations if q not in self.excluded_types]
+            
+            # Filter out bfloat16 if GPU doesn't support it (compute capability < 8.0)
+            if "bfloat16" in result and not self.is_bfloat16_supported():
+                result = [q for q in result if q != "bfloat16"]
+                logger.info("bfloat16 excluded from available quantizations (GPU incompatible)")
+            
+            return result
         except Exception as e:
             logger.warning(f"Failed to get CUDA quantizations: {e}")
             return []
