@@ -24,8 +24,27 @@ def check_model_cached(repo_id: str) -> Optional[str]:
     try:
         local_path = snapshot_download(repo_id, local_files_only=True)
         return local_path
+    except OSError as e:
+        logger.debug(
+            f"Cache check hit OS error for {repo_id}: {e}. "
+            f"Attempting manual cache path resolution."
+        )
+        return _resolve_cache_path(repo_id)
     except Exception:
         return None
+
+
+def _resolve_cache_path(repo_id: str) -> Optional[str]:
+    try:
+        from huggingface_hub import scan_cache_dir
+        cache_info = scan_cache_dir()
+        for repo in cache_info.repos:
+            if repo.repo_id == repo_id:
+                for revision in repo.revisions:
+                    return str(revision.snapshot_path)
+    except Exception:
+        pass
+    return None
 
 
 def get_repo_file_info(repo_id: str) -> list[tuple[str, int]]:
@@ -44,14 +63,24 @@ def get_missing_files(
 ) -> tuple[Optional[str], list[tuple[str, int]]]:
     try:
         local_path = snapshot_download(repo_id, local_files_only=True)
+    except OSError:
+        local_path = _resolve_cache_path(repo_id)
+        if local_path is None:
+            return None, list(files_info)
     except Exception:
         return None, list(files_info)
 
     missing = []
     for filename, size in files_info:
-        filepath = Path(local_path) / filename
-        if not filepath.exists():
-            missing.append((filename, size))
+        try:
+            filepath = Path(local_path) / filename
+            if not filepath.exists():
+                missing.append((filename, size))
+        except OSError as e:
+            logger.debug(
+                f"Cannot traverse '{filename}' in cache (OS error: {e}), "
+                f"assuming present (symlink/reparse point)"
+            )
 
     if missing:
         return None, missing
@@ -91,7 +120,14 @@ def download_model_files(
         if progress_callback:
             progress_callback(downloaded_bytes, total_bytes)
 
-    local_path = snapshot_download(repo_id, local_files_only=True)
+    try:
+        local_path = snapshot_download(repo_id, local_files_only=True)
+    except OSError:
+        local_path = _resolve_cache_path(repo_id)
+        if local_path is None:
+            raise ModelLoadError(
+                f"Files downloaded but cache path could not be resolved for {repo_id}"
+            )
     return local_path
 
 
