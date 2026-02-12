@@ -71,7 +71,21 @@ def download_model_files(
         if cancel_event and cancel_event.is_set():
             raise InterruptedError("Download cancelled")
 
-        hf_hub_download(repo_id, filename)
+        try:
+            hf_hub_download(repo_id, filename)
+        except Exception as file_err:
+            logger.warning(
+                f"Per-file download failed for '{filename}': {file_err}. "
+                f"Falling back to snapshot_download."
+            )
+            try:
+                local_path = snapshot_download(repo_id)
+            except Exception as snap_err:
+                raise snap_err from file_err
+            if progress_callback:
+                progress_callback(total_bytes, total_bytes)
+            return local_path
+
         downloaded_bytes += size
 
         if progress_callback:
