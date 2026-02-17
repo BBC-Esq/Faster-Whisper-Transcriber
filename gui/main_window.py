@@ -165,20 +165,17 @@ class MainWindow(QMainWindow):
 
     def _load_quantization_support(self) -> None:
         try:
+            # Always re-detect supported quantizations from the actual hardware
+            # on startup, since the config may have been written on a different
+            # machine with different GPU capabilities.
+            CheckQuantizationSupport().update_supported_quantizations()
             config = config_manager.load_config()
             self.supported_quantizations = config.get(
                 "supported_quantizations", {"cpu": [], "cuda": []}
             )
 
-            if not self.supported_quantizations.get("cpu") or (
-                self.cuda_available
-                and not self.supported_quantizations.get("cuda")
-            ):
-                CheckQuantizationSupport().update_supported_quantizations()
-                config = config_manager.load_config()
-                self.supported_quantizations = config.get(
-                    "supported_quantizations", {"cpu": [], "cuda": []}
-                )
+            if not self.supported_quantizations.get("cpu"):
+                self.supported_quantizations["cpu"] = ["float32"]
         except Exception as e:
             logger.error(f"Failed to load precision support: {e}")
             self.supported_quantizations = {"cpu": ["float32"], "cuda": []}

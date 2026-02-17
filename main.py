@@ -1,8 +1,25 @@
 from __future__ import annotations
 
+import contextlib
+import io
+import os
 import warnings
 import sys
 import signal
+
+# When launched via pythonw.exe (windowless mode), sys.stdout and sys.stderr
+# can become None if the underlying console handles are invalid. This causes
+# crashes in libraries like tqdm and huggingface_hub that write to these
+# streams. Redirect them to os.devnull to prevent AttributeError crashes.
+if sys.stdout is None:
+    sys.stdout = open(os.devnull, "w", encoding="utf-8")
+if sys.stderr is None:
+    sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
+# Disable huggingface_hub progress bars since there is no console to display
+# them when running as a GUI app. This prevents tqdm from attempting to write
+# to potentially broken stdio streams.
+os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
 warnings.filterwarnings(
     "ignore",
@@ -38,14 +55,22 @@ def _global_exception_handler(exc_type, exc_value, exc_tb):
         )
 
 
-def _check_cuda_available() -> tuple[bool, str | None]:
+def _check_cuda_available() -> bool:
+    try:
+        import ctranslate2
+        return ctranslate2.get_cuda_device_count() > 0
+    except Exception:
+        return False
+
+
+def _get_cuda_device_name() -> str | None:
     try:
         import ctranslate2
         if ctranslate2.get_cuda_device_count() > 0:
-            return True, "NVIDIA GPU"
+            return "NVIDIA GPU"
     except Exception:
         pass
-    return False, None
+    return None
 
 
 def run_gui() -> None:
@@ -62,11 +87,13 @@ def run_gui() -> None:
     app.setStyleSheet(APP_STYLESHEET)
     _install_sigint_handler()
 
-    cuda_ok, device_name = _check_cuda_available()
+    cuda_ok = _check_cuda_available()
     logger.info(f"CUDA available: {cuda_ok}")
 
-    if device_name:
-        logger.info(f"CUDA device: {device_name}")
+    if cuda_ok:
+        device_name = _get_cuda_device_name()
+        if device_name:
+            logger.info(f"CUDA device: {device_name}")
 
     try:
         window = MainWindow(cuda_available=cuda_ok)

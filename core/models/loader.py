@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import io
+import os
+import sys
 import threading
 from pathlib import Path
 from typing import Optional, Callable
@@ -12,6 +15,19 @@ from core.logging_config import get_logger
 from core.exceptions import ModelLoadError
 
 logger = get_logger(__name__)
+
+
+def _ensure_streams() -> None:
+    """Ensure sys.stdout and sys.stderr are valid before calling huggingface_hub.
+
+    When running via pythonw.exe (no console), these streams can be None or can
+    become invalid mid-session. Libraries like tqdm crash with
+    ``'NoneType' object has no attribute 'write'`` when this happens.
+    """
+    if sys.stdout is None:
+        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    if sys.stderr is None:
+        sys.stderr = open(os.devnull, "w", encoding="utf-8")
 
 
 def _make_repo_string(model_name: str, quantization_type: str) -> str:
@@ -93,6 +109,8 @@ def download_model_files(
     progress_callback: Optional[Callable[[int, int], None]] = None,
     cancel_event: Optional[threading.Event] = None,
 ) -> str:
+    _ensure_streams()
+
     total_bytes = sum(size for _, size in files_info)
     downloaded_bytes = 0
 
@@ -107,6 +125,7 @@ def download_model_files(
                 f"Per-file download failed for '{filename}': {file_err}. "
                 f"Falling back to snapshot_download."
             )
+            _ensure_streams()
             try:
                 local_path = snapshot_download(repo_id)
             except Exception as snap_err:

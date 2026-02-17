@@ -10,8 +10,6 @@ class ModelInfo:
 
 class ModelMetadata:
 
-    _RESTRICTED_QUANTS = {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}
-
     _MODELS: List[ModelInfo] = [
         ModelInfo("tiny", True),
         ModelInfo("tiny.en", False),
@@ -22,10 +20,10 @@ class ModelMetadata:
         ModelInfo("medium", True),
         ModelInfo("medium.en", False),
         ModelInfo("large-v3", True),
-        ModelInfo("large-v3-turbo", False, _RESTRICTED_QUANTS),
-        ModelInfo("distil-whisper-small.en", False, _RESTRICTED_QUANTS),
-        ModelInfo("distil-whisper-medium.en", False, _RESTRICTED_QUANTS),
-        ModelInfo("distil-whisper-large-v3", False, _RESTRICTED_QUANTS),
+        ModelInfo("large-v3-turbo", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}),
+        ModelInfo("distil-whisper-small.en", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}),
+        ModelInfo("distil-whisper-medium.en", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}),
+        ModelInfo("distil-whisper-large-v3", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}),
     ]
 
     _MODEL_MAP: Dict[str, ModelInfo] = {m.name: m for m in _MODELS}
@@ -46,9 +44,14 @@ class ModelMetadata:
     @classmethod
     def get_quantization_options(cls, model_name: str, device: str, supported_quantizations: Dict[str, List[str]]) -> List[str]:
         info = cls._MODEL_MAP.get(model_name)
+        hw_supported: Set[str] = set(supported_quantizations.get(device, []))
 
         if info and info.quantization_overrides:
             options = info.quantization_overrides.get(device, [])
+            # Filter model overrides against what the hardware actually supports
+            # so that unsupported types (e.g. bfloat16 on pre-Ampere GPUs) are
+            # never shown.
+            options = [opt for opt in options if opt in hw_supported]
         else:
             options = supported_quantizations.get(device, [])
 
