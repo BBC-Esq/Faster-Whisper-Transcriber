@@ -165,9 +165,6 @@ class MainWindow(QMainWindow):
 
     def _load_quantization_support(self) -> None:
         try:
-            # Always re-detect supported quantizations from the actual hardware
-            # on startup, since the config may have been written on a different
-            # machine with different GPU capabilities.
             CheckQuantizationSupport().update_supported_quantizations()
             config = config_manager.load_config()
             self.supported_quantizations = config.get(

@@ -48,9 +48,6 @@ class ModelMetadata:
 
         if info and info.quantization_overrides:
             options = info.quantization_overrides.get(device, [])
-            # Filter model overrides against what the hardware actually supports
-            # so that unsupported types (e.g. bfloat16 on pre-Ampere GPUs) are
-            # never shown.
             options = [opt for opt in options if opt in hw_supported]
         else:
             options = supported_quantizations.get(device, [])

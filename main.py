@@ -7,18 +7,11 @@ import warnings
 import sys
 import signal
 
-# When launched via pythonw.exe (windowless mode), sys.stdout and sys.stderr
-# can become None if the underlying console handles are invalid. This causes
-# crashes in libraries like tqdm and huggingface_hub that write to these
-# streams. Redirect them to os.devnull to prevent AttributeError crashes.
 if sys.stdout is None:
     sys.stdout = open(os.devnull, "w", encoding="utf-8")
 if sys.stderr is None:
     sys.stderr = open(os.devnull, "w", encoding="utf-8")
 
-# Disable huggingface_hub progress bars since there is no console to display
-# them when running as a GUI app. This prevents tqdm from attempting to write
-# to potentially broken stdio streams.
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 
 warnings.filterwarnings(

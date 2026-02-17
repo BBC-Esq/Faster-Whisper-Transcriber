@@ -18,12 +18,6 @@ logger = get_logger(__name__)
 
 
 def _ensure_streams() -> None:
-    """Ensure sys.stdout and sys.stderr are valid before calling huggingface_hub.
-
-    When running via pythonw.exe (no console), these streams can be None or can
-    become invalid mid-session. Libraries like tqdm crash with
-    ``'NoneType' object has no attribute 'write'`` when this happens.
-    """
     if sys.stdout is None:
         sys.stdout = open(os.devnull, "w", encoding="utf-8")
     if sys.stderr is None:
