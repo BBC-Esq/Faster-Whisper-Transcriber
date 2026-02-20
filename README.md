@@ -13,7 +13,7 @@
 ## ⚙️ Windows Installer
 > Download and run [```FasterWhisperTranscriber_Setup.exe```](https://github.com/BBC-Esq/Faster-Whisper-Transcriber/releases/latest/download/FasterWhisperTranscriber_Setup.exe).
 
-## 💻 Install from Sourcecode
+## 💻 Install And Run from Virtual Environment
 > Download the latest release...unzip and extract...go to the directory containing ```main.py```...run these commands in order:
 ```
 python -m venv .
