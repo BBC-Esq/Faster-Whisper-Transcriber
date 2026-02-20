@@ -12,6 +12,8 @@ from core.exceptions import ConfigurationError
 
 logger = get_logger(__name__)
 
+_FLUSH_DELAY_MS = 500
+
 
 class ConfigManager:
 
@@ -48,6 +50,53 @@ class ConfigManager:
     def __init__(self):
         self._config_path = Path(get_resource_path("config.yaml"))
         self._config_cache: dict[str, Any] | None = None
+        self._dirty = False
+        self._flush_timer = None
+
+    def _ensure_flush_timer(self) -> None:
+        if self._flush_timer is not None:
+            return
+        try:
+            from PySide6.QtCore import QTimer
+            self._flush_timer = QTimer()
+            self._flush_timer.setSingleShot(True)
+            self._flush_timer.setInterval(_FLUSH_DELAY_MS)
+            self._flush_timer.timeout.connect(self._flush)
+        except Exception:
+            self._flush_timer = None
+
+    def _schedule_flush(self) -> None:
+        self._ensure_flush_timer()
+        if self._flush_timer is not None:
+            self._flush_timer.start()
+
+    def _flush(self) -> None:
+        if not self._dirty:
+            return
+        if self._config_cache is None:
+            self._dirty = False
+            return
+        try:
+            self._save_to_disk(self._config_cache)
+            self._dirty = False
+        except Exception as e:
+            logger.error(f"Deferred config flush failed: {e}")
+
+    def flush_sync(self) -> None:
+        if self._flush_timer is not None:
+            self._flush_timer.stop()
+        self._flush()
+
+    def _ensure_cache(self) -> dict[str, Any]:
+        if self._config_cache is None:
+            self._config_cache = self._load_from_file()
+        return self._config_cache
+
+    def _apply_to_cache(self, updates: dict[str, Any]) -> None:
+        cache = self._ensure_cache()
+        self._deep_update(cache, updates)
+        self._dirty = True
+        self._schedule_flush()
 
     @property
     def config_path(self) -> Path:
@@ -69,9 +118,7 @@ class ConfigManager:
         return value
 
     def load_config(self) -> dict[str, Any]:
-        if self._config_cache is None:
-            self._config_cache = self._load_from_file()
-        return copy.deepcopy(self._config_cache)
+        return copy.deepcopy(self._ensure_cache())
 
     def _load_from_file(self) -> dict[str, Any]:
         loaded_config = {}
@@ -137,7 +184,7 @@ class ConfigManager:
                     if isinstance(q, str) and q in self.VALID_OPTIONS["quantization_types"]
                 ]
 
-    def save_config(self, config: dict[str, Any]) -> None:
+    def _save_to_disk(self, config: dict[str, Any]) -> None:
         try:
             self._config_path.parent.mkdir(parents=True, exist_ok=True)
             validated_config = copy.deepcopy(config)
@@ -152,30 +199,35 @@ class ConfigManager:
             logger.error(f"Failed to save configuration: {e}")
             raise ConfigurationError(f"Failed to save configuration: {e}") from e
 
+    def save_config(self, config: dict[str, Any]) -> None:
+        self._save_to_disk(config)
+        self._dirty = False
+        if self._flush_timer is not None:
+            self._flush_timer.stop()
+
     def update_config(self, updates: dict[str, Any]) -> None:
-        config = self.load_config()
-        self._deep_update(config, updates)
-        self.save_config(config)
+        self._apply_to_cache(updates)
 
     def get_value(self, key: str, default: Any = None) -> Any:
-        return self.load_config().get(key, default)
+        return self._ensure_cache().get(key, default)
 
     def set_value(self, key: str, value: Any) -> None:
-        self.update_config({key: value})
+        self._apply_to_cache({key: value})
 
     def get_model_settings(self) -> dict[str, str]:
-        config = self.load_config()
-        return {k: config[k] for k in ["model_name", "quantization_type", "device_type"]}
+        cache = self._ensure_cache()
+        return {k: cache[k] for k in ["model_name", "quantization_type", "device_type"]}
 
     def set_model_settings(self, model_name: str, quantization_type: str, device_type: str) -> None:
-        self.update_config({
+        self._apply_to_cache({
             "model_name": model_name,
             "quantization_type": quantization_type,
             "device_type": device_type
         })
 
     def get_supported_quantizations(self) -> dict[str, list[str]]:
-        return self.get_value("supported_quantizations", {"cpu": [], "cuda": []})
+        value = self.get_value("supported_quantizations", {"cpu": [], "cuda": []})
+        return copy.deepcopy(value) if isinstance(value, dict) else {"cpu": [], "cuda": []}
 
     def set_supported_quantizations(self, device: str, quantizations: list[str]) -> None:
         if device not in self.VALID_OPTIONS["device_types"]:

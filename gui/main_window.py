@@ -897,6 +897,7 @@ class MainWindow(QMainWindow):
 
         self._save_state()
         self._save_config("show_clipboard_window", self._clipboard_visible)
+        config_manager.flush_sync()
         self.clipboard_window.close()
         self.controller.stop_all_threads()
 
