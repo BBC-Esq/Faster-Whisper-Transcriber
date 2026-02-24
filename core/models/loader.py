@@ -95,7 +95,7 @@ def _resolve_cache_path(repo_id: str) -> Optional[str]:
 
 def get_repo_file_info(repo_id: str) -> list[tuple[str, int]]:
     api = HfApi()
-    info = api.repo_info(repo_id, repo_type="model")
+    info = api.repo_info(repo_id, repo_type="model", files_metadata=True)
     files = []
     for sibling in info.siblings:
         size = sibling.size if sibling.size is not None else 0
