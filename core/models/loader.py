@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import io
 import os
 import sys
 import threading
@@ -10,6 +9,7 @@ from typing import Optional, Callable
 import psutil
 from faster_whisper import WhisperModel
 from huggingface_hub import HfApi, hf_hub_download, snapshot_download
+from tqdm.auto import tqdm
 
 from core.logging_config import get_logger
 from core.exceptions import ModelLoadError
@@ -22,6 +22,42 @@ def _ensure_streams() -> None:
         sys.stdout = open(os.devnull, "w", encoding="utf-8")
     if sys.stderr is None:
         sys.stderr = open(os.devnull, "w", encoding="utf-8")
+
+
+class _ProgressTqdm(tqdm):
+    def __init__(
+        self,
+        *args,
+        progress_callback=None,
+        completed_bytes=0,
+        total_all_bytes=0,
+        **kwargs,
+    ):
+        self._progress_callback = progress_callback
+        self._completed_bytes = completed_bytes
+        self._total_all_bytes = total_all_bytes
+        kwargs.pop("name", None)
+        if "file" in kwargs and kwargs["file"] is None:
+            kwargs["file"] = open(os.devnull, "w")
+        super().__init__(*args, **kwargs)
+
+    def update(self, n=1):
+        super().update(n)
+        if self._progress_callback and self._total_all_bytes > 0:
+            self._progress_callback(
+                self._completed_bytes + int(self.n), self._total_all_bytes
+            )
+
+
+def _make_tqdm_class(callback, completed, total_all):
+    class _BoundTqdm(_ProgressTqdm):
+        def __init__(self, *args, **kwargs):
+            kwargs["progress_callback"] = callback
+            kwargs["completed_bytes"] = completed
+            kwargs["total_all_bytes"] = total_all
+            super().__init__(*args, **kwargs)
+
+    return _BoundTqdm
 
 
 def _make_repo_string(model_name: str, quantization_type: str) -> str:
@@ -113,7 +149,15 @@ def download_model_files(
             raise InterruptedError("Download cancelled")
 
         try:
-            hf_hub_download(repo_id, filename)
+            tqdm_cls = (
+                _make_tqdm_class(progress_callback, downloaded_bytes, total_bytes)
+                if progress_callback
+                else None
+            )
+            dl_kwargs = {"repo_id": repo_id, "filename": filename}
+            if tqdm_cls:
+                dl_kwargs["tqdm_class"] = tqdm_cls
+            hf_hub_download(**dl_kwargs)
         except Exception as file_err:
             logger.warning(
                 f"Per-file download failed for '{filename}': {file_err}. "
