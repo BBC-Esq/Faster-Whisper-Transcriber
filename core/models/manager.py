@@ -20,6 +20,15 @@ from core.exceptions import ModelLoadError
 
 logger = get_logger(__name__)
 
+
+def _unload_model(model) -> None:
+    try:
+        if hasattr(model, "model") and hasattr(model.model, "unload_model"):
+            model.model.unload_model()
+    except Exception as e:
+        logger.debug(f"Model unload call failed (non-critical): {e}")
+
+
 _NETWORK_ERROR_TERMS = [
     "connection",
     "network",
@@ -285,6 +294,7 @@ class ModelManager(QObject):
     ) -> None:
         if version != self._pending_version:
             logger.info(f"Ignoring stale model load (version {version})")
+            _unload_model(model)
             del model
             gc.collect()
             return
@@ -292,6 +302,7 @@ class ModelManager(QObject):
         self._model_mutex.lock()
         try:
             if self._model is not None:
+                _unload_model(self._model)
                 del self._model
                 gc.collect()
             self._model = model
@@ -319,6 +330,7 @@ class ModelManager(QObject):
         self._model_mutex.lock()
         try:
             if self._model is not None:
+                _unload_model(self._model)
                 del self._model
                 self._model = None
                 self._model_version = None
