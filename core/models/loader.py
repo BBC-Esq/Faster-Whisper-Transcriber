@@ -116,19 +116,75 @@ def validate_model_path(path: str) -> bool:
     return _is_file_accessible(model_bin)
 
 
-def _clear_corrupted_cache(repo_id: str) -> None:
+def _on_rmtree_error(func, path, _exc_info):
+    try:
+        os.chmod(path, 0o777)
+        func(path)
+    except Exception:
+        try:
+            os.unlink(path)
+        except Exception:
+            pass
+
+
+def _force_remove_tree(path: Path) -> None:
+    try:
+        entries = os.listdir(str(path))
+    except OSError:
+        return
+    for entry in entries:
+        entry_path = os.path.join(str(path), entry)
+        try:
+            os.unlink(entry_path)
+        except OSError:
+            _force_remove_tree(Path(entry_path))
+    try:
+        os.rmdir(str(path))
+    except OSError:
+        pass
+
+
+def _get_repo_cache_path(repo_id: str) -> Optional[Path]:
     try:
         from huggingface_hub import scan_cache_dir
         cache_info = scan_cache_dir()
         for repo in cache_info.repos:
             if repo.repo_id == repo_id:
-                for revision in repo.revisions:
-                    snapshot_path = Path(revision.snapshot_path)
-                    if snapshot_path.exists():
-                        shutil.rmtree(snapshot_path, ignore_errors=True)
-                        logger.info(f"Cleared corrupted snapshot: {snapshot_path}")
-    except Exception as e:
-        logger.warning(f"Failed to clear corrupted cache: {e}")
+                return Path(repo.repo_path)
+    except Exception:
+        pass
+
+    try:
+        from huggingface_hub.constants import HF_HUB_CACHE
+        dir_name = "models--" + repo_id.replace("/", "--")
+        candidate = Path(HF_HUB_CACHE) / dir_name
+        if candidate.exists():
+            return candidate
+    except Exception:
+        pass
+
+    return None
+
+
+def _clear_corrupted_cache(repo_id: str) -> None:
+    target = _get_repo_cache_path(repo_id)
+    if target is None:
+        logger.warning(f"Could not locate cache directory for {repo_id}")
+        return
+
+    logger.info(f"Clearing entire model cache: {target}")
+    shutil.rmtree(target, onerror=_on_rmtree_error)
+
+    if target.exists():
+        logger.warning(f"rmtree incomplete, forcing file-by-file removal")
+        _force_remove_tree(target)
+
+    if target.exists():
+        logger.warning(
+            f"Cache directory still exists after forced removal: {target}"
+        )
+    else:
+        logger.info(f"Successfully cleared model cache: {target}")
 
 
 def get_repo_file_info(repo_id: str) -> list[tuple[str, int]]:
