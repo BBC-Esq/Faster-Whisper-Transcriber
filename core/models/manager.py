@@ -147,7 +147,7 @@ class _ModelLoaderRunnable(QRunnable):
                 self.signals.download_cancelled.emit(self.model_version)
                 return None
 
-            _, missing_files = get_missing_files(repo_id, files_info)
+            _, missing_files = get_missing_files(repo_id, files_info, cached_path)
 
             if not missing_files:
                 return cached_path
@@ -175,7 +175,7 @@ class _ModelLoaderRunnable(QRunnable):
             self.signals.download_cancelled.emit(self.model_version)
             return None
 
-        _, missing_files = get_missing_files(repo_id, files_info)
+        _, missing_files = get_missing_files(repo_id, files_info, cached_path)
 
         if not missing_files:
             return check_model_cached(repo_id)

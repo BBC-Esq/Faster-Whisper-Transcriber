@@ -75,18 +75,39 @@ def _make_repo_string(model_name: str, quantization_type: str) -> str:
     return f"ctranslate2-4you/whisper-{model_name}-ct2-{quantization_type}"
 
 
-def check_model_cached(repo_id: str) -> Optional[str]:
+def _get_local_model_dir(repo_id: str) -> Path:
     try:
-        local_path = snapshot_download(repo_id, local_files_only=True)
-        return local_path
+        from huggingface_hub.constants import HF_HUB_CACHE
+        base = Path(HF_HUB_CACHE)
+    except Exception:
+        base = Path.home() / ".cache" / "huggingface" / "hub"
+    return base / "local_copies" / repo_id.replace("/", "--")
+
+
+def check_model_cached(repo_id: str) -> Optional[str]:
+    normal_path = None
+    try:
+        normal_path = snapshot_download(repo_id, local_files_only=True)
     except OSError as e:
         logger.debug(
             f"Cache check hit OS error for {repo_id}: {e}. "
             f"Attempting manual cache path resolution."
         )
-        return _resolve_cache_path(repo_id)
+        normal_path = _resolve_cache_path(repo_id)
     except Exception:
-        return None
+        pass
+
+    if normal_path and validate_model_path(normal_path):
+        return normal_path
+
+    local_dir = _get_local_model_dir(repo_id)
+    if local_dir.is_dir() and validate_model_path(str(local_dir)):
+        return str(local_dir)
+
+    if normal_path:
+        return normal_path
+
+    return None
 
 
 def _resolve_cache_path(repo_id: str) -> Optional[str]:
@@ -199,26 +220,29 @@ def get_repo_file_info(repo_id: str) -> list[tuple[str, int]]:
 
 
 def get_missing_files(
-    repo_id: str, files_info: list[tuple[str, int]]
+    repo_id: str,
+    files_info: list[tuple[str, int]],
+    cached_path: Optional[str] = None,
 ) -> tuple[Optional[str], list[tuple[str, int]]]:
-    try:
-        local_path = snapshot_download(repo_id, local_files_only=True)
-    except OSError:
-        local_path = _resolve_cache_path(repo_id)
-        if local_path is None:
+    if cached_path is None:
+        try:
+            cached_path = snapshot_download(repo_id, local_files_only=True)
+        except OSError:
+            cached_path = _resolve_cache_path(repo_id)
+            if cached_path is None:
+                return None, list(files_info)
+        except Exception:
             return None, list(files_info)
-    except Exception:
-        return None, list(files_info)
 
     missing = []
     for filename, size in files_info:
-        filepath = Path(local_path) / filename
+        filepath = Path(cached_path) / filename
         if not _is_file_accessible(filepath):
             missing.append((filename, size))
 
     if missing:
         return None, missing
-    return local_path, []
+    return cached_path, []
 
 
 def download_model_files(
@@ -278,23 +302,26 @@ def download_model_files(
         return local_path
 
     logger.warning(
-        f"Cache still corrupted after download for {repo_id}, "
-        f"clearing snapshot and forcing full re-download"
+        f"Cache symlinks appear broken for {repo_id}, "
+        f"downloading to local directory without symlinks"
     )
     _clear_corrupted_cache(repo_id)
     _ensure_streams()
 
     try:
-        local_path = snapshot_download(repo_id)
+        local_dir = _get_local_model_dir(repo_id)
+        local_dir.mkdir(parents=True, exist_ok=True)
+        snapshot_download(repo_id, local_dir=str(local_dir))
+        local_path = str(local_dir)
     except Exception as e:
         raise ModelLoadError(
-            f"Failed to repair corrupted cache for {repo_id}: {e}"
+            f"Failed to download model files for {repo_id}: {e}"
         ) from e
 
     if not validate_model_path(local_path):
         raise ModelLoadError(
-            f"Model cache for {repo_id} is corrupted and could not be "
-            f"repaired automatically. Please manually delete the cache "
+            f"Model files for {repo_id} could not be downloaded "
+            f"successfully. Please manually delete the cache "
             f"directory and try again."
         )
 
