@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import shutil
 import sys
 import threading
 from pathlib import Path
@@ -115,6 +116,21 @@ def validate_model_path(path: str) -> bool:
     return _is_file_accessible(model_bin)
 
 
+def _clear_corrupted_cache(repo_id: str) -> None:
+    try:
+        from huggingface_hub import scan_cache_dir
+        cache_info = scan_cache_dir()
+        for repo in cache_info.repos:
+            if repo.repo_id == repo_id:
+                for revision in repo.revisions:
+                    snapshot_path = Path(revision.snapshot_path)
+                    if snapshot_path.exists():
+                        shutil.rmtree(snapshot_path, ignore_errors=True)
+                        logger.info(f"Cleared corrupted snapshot: {snapshot_path}")
+    except Exception as e:
+        logger.warning(f"Failed to clear corrupted cache: {e}")
+
+
 def get_repo_file_info(repo_id: str) -> list[tuple[str, int]]:
     api = HfApi()
     info = api.repo_info(repo_id, repo_type="model", files_metadata=True)
@@ -201,6 +217,31 @@ def download_model_files(
             raise ModelLoadError(
                 f"Files downloaded but cache path could not be resolved for {repo_id}"
             )
+
+    if validate_model_path(local_path):
+        return local_path
+
+    logger.warning(
+        f"Cache still corrupted after download for {repo_id}, "
+        f"clearing snapshot and forcing full re-download"
+    )
+    _clear_corrupted_cache(repo_id)
+    _ensure_streams()
+
+    try:
+        local_path = snapshot_download(repo_id)
+    except Exception as e:
+        raise ModelLoadError(
+            f"Failed to repair corrupted cache for {repo_id}: {e}"
+        ) from e
+
+    if not validate_model_path(local_path):
+        raise ModelLoadError(
+            f"Model cache for {repo_id} is corrupted and could not be "
+            f"repaired automatically. Please manually delete the cache "
+            f"directory and try again."
+        )
+
     return local_path
 
 
