@@ -101,6 +101,20 @@ def _resolve_cache_path(repo_id: str) -> Optional[str]:
     return None
 
 
+def _is_file_accessible(filepath: Path) -> bool:
+    try:
+        with open(filepath, "rb") as f:
+            f.read(1)
+        return True
+    except (OSError, IOError):
+        return False
+
+
+def validate_model_path(path: str) -> bool:
+    model_bin = Path(path) / "model.bin"
+    return _is_file_accessible(model_bin)
+
+
 def get_repo_file_info(repo_id: str) -> list[tuple[str, int]]:
     api = HfApi()
     info = api.repo_info(repo_id, repo_type="model", files_metadata=True)
@@ -126,15 +140,9 @@ def get_missing_files(
 
     missing = []
     for filename, size in files_info:
-        try:
-            filepath = Path(local_path) / filename
-            if not filepath.exists():
-                missing.append((filename, size))
-        except OSError as e:
-            logger.debug(
-                f"Cannot traverse '{filename}' in cache (OS error: {e}), "
-                f"assuming present (symlink/reparse point)"
-            )
+        filepath = Path(local_path) / filename
+        if not _is_file_accessible(filepath):
+            missing.append((filename, size))
 
     if missing:
         return None, missing

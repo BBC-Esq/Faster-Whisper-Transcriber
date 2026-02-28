@@ -14,6 +14,7 @@ from core.models.loader import (
     get_missing_files,
     download_model_files,
     load_model,
+    validate_model_path,
 )
 from core.logging_config import get_logger
 from core.exceptions import ModelLoadError
@@ -122,11 +123,20 @@ class _ModelLoaderRunnable(QRunnable):
                 files_info = get_repo_file_info(repo_id)
             except Exception as e:
                 if _is_network_error(e):
-                    logger.info(
-                        f"Offline but found cached model for "
-                        f"'{self.model_name}', using cache as-is"
+                    if validate_model_path(cached_path):
+                        logger.info(
+                            f"Offline but found cached model for "
+                            f"'{self.model_name}', using cache as-is"
+                        )
+                        return cached_path
+                    self.signals.error_occurred.emit(
+                        f"Cached model '{self.model_name}' appears corrupted "
+                        f"and cannot be verified offline. Please connect to "
+                        f"the internet to re-download, or delete the cached "
+                        f"model and try again.",
+                        self.model_version,
                     )
-                    return cached_path
+                    return None
                 self.signals.error_occurred.emit(
                     f"Failed to get model info for '{self.model_name}': {e}",
                     self.model_version,
