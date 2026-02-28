@@ -7,10 +7,19 @@ import warnings
 import sys
 import signal
 
+
+class _NullWriter:
+    def write(self, *args, **kwargs):
+        pass
+
+    def flush(self, *args, **kwargs):
+        pass
+
+
 if sys.stdout is None:
-    sys.stdout = open(os.devnull, "w", encoding="utf-8")
+    sys.stdout = _NullWriter()
 if sys.stderr is None:
-    sys.stderr = open(os.devnull, "w", encoding="utf-8")
+    sys.stderr = _NullWriter()
 
 os.environ.setdefault("HF_HUB_DISABLE_PROGRESS_BARS", "1")
 

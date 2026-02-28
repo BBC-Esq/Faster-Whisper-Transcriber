@@ -715,17 +715,19 @@ class MainWindow(QMainWindow):
         if not self.record_button.isEnabled():
             return
 
-        self.is_recording = not self.is_recording
         if self.is_recording:
-            self.controller.start_recording()
-            self.record_button.setText("Recording...")
-            self.record_button.set_state(WaveformButton.RECORDING)
-            self._sample_timer.start()
-        else:
             self._sample_timer.stop()
             self.controller.stop_recording()
+            self.is_recording = False
             self.record_button.setText("Processing...")
-        update_button_property(self.record_button, "recording", self.is_recording)
+            update_button_property(self.record_button, "recording", False)
+        else:
+            if self.controller.start_recording():
+                self.is_recording = True
+                self.record_button.setText("Recording...")
+                self.record_button.set_state(WaveformButton.RECORDING)
+                self._sample_timer.start()
+                update_button_property(self.record_button, "recording", True)
 
     @Slot()
     def _feed_audio_samples(self) -> None:

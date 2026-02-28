@@ -3,9 +3,11 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
+from faster_whisper import BatchedInferencePipeline
 from PySide6.QtCore import QObject, Signal, QRunnable, QThreadPool
 
 from core.temp_file_manager import temp_file_manager
+from core.text.curation import curate_text
 from core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -60,7 +62,6 @@ class _TranscriptionRunnable(QRunnable):
             logger.info(f"Starting transcription: {self.audio_file}")
 
             if self.batch_size is not None and int(self.batch_size) > 1:
-                from faster_whisper import BatchedInferencePipeline
                 batched_model = BatchedInferencePipeline(model=self.model)
                 segments, info = batched_model.transcribe(
                     str(self.audio_file),
@@ -187,7 +188,6 @@ class TranscriptionService(QObject):
         self._is_transcribing = False
         if self.curate_enabled:
             try:
-                from core.text.curation import curate_text
                 text = curate_text(text)
             except Exception as e:
                 logger.warning(f"Text curation failed: {e}")

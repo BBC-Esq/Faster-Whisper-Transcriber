@@ -17,11 +17,19 @@ from core.exceptions import ModelLoadError
 logger = get_logger(__name__)
 
 
+class _NullWriter:
+    def write(self, *args, **kwargs):
+        pass
+
+    def flush(self, *args, **kwargs):
+        pass
+
+
 def _ensure_streams() -> None:
     if sys.stdout is None:
-        sys.stdout = open(os.devnull, "w", encoding="utf-8")
+        sys.stdout = _NullWriter()
     if sys.stderr is None:
-        sys.stderr = open(os.devnull, "w", encoding="utf-8")
+        sys.stderr = _NullWriter()
 
 
 class _ProgressTqdm(tqdm):
@@ -38,7 +46,7 @@ class _ProgressTqdm(tqdm):
         self._total_all_bytes = total_all_bytes
         kwargs.pop("name", None)
         if "file" in kwargs and kwargs["file"] is None:
-            kwargs["file"] = open(os.devnull, "w")
+            kwargs["file"] = _NullWriter()
         super().__init__(*args, **kwargs)
 
     def update(self, n=1):

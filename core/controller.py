@@ -101,9 +101,11 @@ class TranscriberController(QObject):
     def cancel_model_loading(self) -> None:
         self.model_manager.cancel_loading()
 
-    def start_recording(self) -> None:
+    def start_recording(self) -> bool:
         if not self.audio_manager.start_recording():
             self.update_button_signal.emit("Already recording")
+            return False
+        return True
 
     def stop_recording(self) -> None:
         self.audio_manager.stop_recording()

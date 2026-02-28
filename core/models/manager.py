@@ -5,7 +5,7 @@ import gc
 import uuid
 import threading
 
-from PySide6.QtCore import QObject, Signal, QMutex, QRunnable, QThreadPool
+from PySide6.QtCore import QObject, Signal, QMutex, QMutexLocker, QRunnable, QThreadPool
 
 from core.models.loader import (
     _make_repo_string,
@@ -259,11 +259,8 @@ class ModelManager(QObject):
             self._cancel_event.set()
 
     def get_model(self) -> tuple[Optional[object], Optional[str]]:
-        self._model_mutex.lock()
-        try:
+        with QMutexLocker(self._model_mutex):
             return self._model, self._model_version
-        finally:
-            self._model_mutex.unlock()
 
     def _on_download_started(
         self, model_name: str, total_bytes: int, version: str
@@ -299,16 +296,13 @@ class ModelManager(QObject):
             gc.collect()
             return
 
-        self._model_mutex.lock()
-        try:
+        with QMutexLocker(self._model_mutex):
             if self._model is not None:
                 _unload_model(self._model)
                 del self._model
                 gc.collect()
             self._model = model
             self._model_version = version
-        finally:
-            self._model_mutex.unlock()
 
         self._current_settings = {
             "model_name": name,
@@ -327,14 +321,11 @@ class ModelManager(QObject):
         if self._cancel_event:
             self._cancel_event.set()
         self._thread_pool.waitForDone(5000)
-        self._model_mutex.lock()
-        try:
+        with QMutexLocker(self._model_mutex):
             if self._model is not None:
                 _unload_model(self._model)
                 del self._model
                 self._model = None
                 self._model_version = None
                 gc.collect()
-        finally:
-            self._model_mutex.unlock()
         logger.debug("ModelManager cleanup complete")
