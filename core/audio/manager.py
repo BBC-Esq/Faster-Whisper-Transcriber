@@ -19,13 +19,20 @@ class AudioManager(QObject):
     audio_ready = Signal(str)
     audio_error = Signal(str)
 
-    def __init__(self, samplerate: int = 44_100, channels: int = 1, dtype: str = "int16"):
+    def __init__(self, samplerate: int = 44_100, channels: int = 1, dtype: str = "int16", device_id: int | None = None):
         super().__init__()
         self.samplerate = samplerate
         self.channels = channels
         self.dtype = dtype
+        self.device_id = device_id
         self._recording_thread: Optional[RecordingThread] = None
         self._current_temp_file: Optional[Path] = None
+
+    def set_device(self, device_id: int | None, samplerate: int, channels: int, dtype: str) -> None:
+        self.device_id = device_id
+        self.samplerate = samplerate
+        self.channels = channels
+        self.dtype = dtype
 
     def start_recording(self) -> bool:
         if self._recording_thread and self._recording_thread.isRunning():
@@ -41,6 +48,7 @@ class AudioManager(QObject):
                 samplerate=self.samplerate,
                 channels=self.channels,
                 dtype=self.dtype,
+                device=self.device_id,
             )
             self._recording_thread.recording_error.connect(self._on_recording_error)
             self._recording_thread.recording_finished.connect(self._on_recording_finished)
@@ -81,17 +89,25 @@ class AudioManager(QObject):
         return None
 
     def cleanup(self) -> None:
+        import time as _time
+        _t = _time.perf_counter()
+
         if self._recording_thread and self._recording_thread.isRunning():
             self._recording_thread.stop()
+            logger.info(f"[SHUTDOWN]   AM recording_thread.stop(): {_time.perf_counter() - _t:.3f}s")
 
+            _t2 = _time.perf_counter()
             if not self._recording_thread.wait_for_cleanup(timeout_ms=3000):
                 logger.warning("Recording thread cleanup taking longer than expected, waiting...")
                 self._recording_thread.wait(2000)
+            logger.info(f"[SHUTDOWN]   AM wait_for_cleanup: {_time.perf_counter() - _t2:.3f}s")
 
             if self._recording_thread.isRunning():
                 logger.error("Recording thread did not stop gracefully, forcing termination")
                 self._recording_thread.terminate()
                 self._recording_thread.wait(1000)
+        else:
+            logger.info(f"[SHUTDOWN]   AM no recording thread running: {_time.perf_counter() - _t:.3f}s")
 
         if self._current_temp_file:
             temp_file_manager.release(self._current_temp_file)

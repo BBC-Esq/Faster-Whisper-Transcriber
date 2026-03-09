@@ -23,8 +23,8 @@ class TranscriberController(QObject):
     model_loaded_signal = Signal(str, str, str)
     error_occurred = Signal(str, str)
     transcription_cancelled_signal = Signal()
-    model_download_started = Signal(str, int)
-    model_download_progress = Signal(int, int)
+    model_download_started = Signal(str, object)
+    model_download_progress = Signal(object, object)
     model_download_finished = Signal(str)
     model_download_cancelled = Signal()
     model_loading_started = Signal(str)
@@ -34,14 +34,15 @@ class TranscriberController(QObject):
         model_manager: Optional[ModelManager] = None,
         audio_manager: Optional[AudioManager] = None,
         transcription_service: Optional[TranscriptionService] = None,
+        audio_device_id: int | None = None,
     ):
         super().__init__()
 
-        samplerate, channels, dtype = get_optimal_audio_settings()
-        logger.info(f"Audio settings: {samplerate} Hz, {channels} ch, {dtype}")
+        samplerate, channels, dtype = get_optimal_audio_settings(audio_device_id)
+        logger.info(f"Audio settings: {samplerate} Hz, {channels} ch, {dtype}, device={audio_device_id}")
 
         self.model_manager = model_manager or ModelManager()
-        self.audio_manager = audio_manager or AudioManager(samplerate, channels, dtype)
+        self.audio_manager = audio_manager or AudioManager(samplerate, channels, dtype, device_id=audio_device_id)
 
         task_mode = config_manager.get_value("task_mode", "transcribe")
         curate_enabled = config_manager.get_value("curate_transcription", True)
@@ -62,6 +63,11 @@ class TranscriberController(QObject):
 
     def set_task_mode(self, mode: str) -> None:
         self.transcription_service.set_task_mode(mode)
+
+    def set_audio_device(self, device_id: int | None) -> None:
+        samplerate, channels, dtype = get_optimal_audio_settings(device_id)
+        self.audio_manager.set_device(device_id, samplerate, channels, dtype)
+        logger.info(f"Audio device updated: id={device_id}, {samplerate} Hz, {channels} ch")
 
     def _connect_signals(self) -> None:
         self.model_manager.model_loaded.connect(self._on_model_loaded)
@@ -138,11 +144,11 @@ class TranscriberController(QObject):
                 "Transcription Error", "No model is loaded to process audio"
             )
 
-    @Slot(str, int)
+    @Slot(str, object)
     def _on_download_started(self, model_name: str, total_bytes: int) -> None:
         self.model_download_started.emit(model_name, total_bytes)
 
-    @Slot(int, int)
+    @Slot(object, object)
     def _on_download_progress(self, downloaded: int, total: int) -> None:
         self.model_download_progress.emit(downloaded, total)
 
@@ -227,8 +233,27 @@ class TranscriberController(QObject):
         self.transcription_cancelled_signal.emit()
 
     def stop_all_threads(self) -> None:
+        import time as _time
         logger.info("Stopping all threads")
+
+        _t = _time.perf_counter()
+        self.model_manager.cancel_loading()
+        logger.info(f"[SHUTDOWN] model_manager.cancel_loading(): {_time.perf_counter() - _t:.3f}s")
+
+        _t = _time.perf_counter()
+        self.transcription_service.cancel_transcription()
+        logger.info(f"[SHUTDOWN] transcription_service.cancel_transcription(): {_time.perf_counter() - _t:.3f}s")
+
+        _t = _time.perf_counter()
         self.audio_manager.cleanup()
+        logger.info(f"[SHUTDOWN] audio_manager.cleanup(): {_time.perf_counter() - _t:.3f}s")
+
+        _t = _time.perf_counter()
         self.transcription_service.cleanup()
+        logger.info(f"[SHUTDOWN] transcription_service.cleanup(): {_time.perf_counter() - _t:.3f}s")
+
+        _t = _time.perf_counter()
         self.model_manager.cleanup()
+        logger.info(f"[SHUTDOWN] model_manager.cleanup(): {_time.perf_counter() - _t:.3f}s")
+
         logger.info("All threads stopped")

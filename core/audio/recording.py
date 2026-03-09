@@ -29,6 +29,7 @@ class RecordingThread(QThread):
         channels: int = 1,
         dtype: str = "int16",
         latency: str = "high",
+        device: int | None = None,
     ) -> None:
         super().__init__()
         self.output_path = Path(output_path)
@@ -36,6 +37,7 @@ class RecordingThread(QThread):
         self.channels = channels
         self.dtype = dtype
         self.latency = latency
+        self.device = device
 
         self._audio_q: queue.Queue[bytes] = queue.Queue()
         self._overflow_count: int = 0
@@ -50,6 +52,7 @@ class RecordingThread(QThread):
     def _audio_stream(self) -> Iterator[sd.RawInputStream]:
         try:
             stream = sd.RawInputStream(
+                device=self.device,
                 samplerate=self.samplerate,
                 channels=self.channels,
                 dtype=self.dtype,

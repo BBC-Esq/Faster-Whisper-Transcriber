@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import logging
 import os
 import warnings
 import sys
@@ -105,7 +106,8 @@ def run_gui() -> None:
 
         temp_file_manager.cleanup_all()
         logger.info(f"Application exiting with code {exit_code}")
-        sys.exit(exit_code)
+        logging.shutdown()
+        os._exit(exit_code)
 
     except Exception as e:
         logger.critical(f"Failed to start application: {e}", exc_info=True)

@@ -29,9 +29,14 @@ class GlobalHotkey:
 
     def stop(self) -> None:
         if self.listener is not None:
+            import time as _time
             try:
+                _t = _time.perf_counter()
                 self.listener.stop()
-                logger.debug("Global hotkey listener stopped")
+                logger.info(f"[SHUTDOWN] listener.stop(): {_time.perf_counter() - _t:.3f}s")
+                _t = _time.perf_counter()
+                self.listener.join(timeout=2.0)
+                logger.info(f"[SHUTDOWN] listener.join(): {_time.perf_counter() - _t:.3f}s (alive={self.listener.is_alive()})")
             except Exception as e:
                 logger.warning(f"Error stopping hotkey listener: {e}")
             finally:

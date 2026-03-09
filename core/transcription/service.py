@@ -215,7 +215,15 @@ class TranscriptionService(QObject):
         self.curate_enabled = enabled
 
     def cleanup(self) -> None:
+        import time as _time
+
+        _t = _time.perf_counter()
         if self._cancel_event:
             self._cancel_event.set()
+        logger.info(f"[SHUTDOWN]   TS cancel_event.set(): {_time.perf_counter() - _t:.3f}s")
+
+        _t = _time.perf_counter()
         self._thread_pool.waitForDone(5000)
+        logger.info(f"[SHUTDOWN]   TS waitForDone(5000): {_time.perf_counter() - _t:.3f}s")
+
         logger.debug("TranscriptionService cleanup complete")

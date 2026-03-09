@@ -18,6 +18,52 @@ def get_default_input_device_id() -> Optional[int]:
         return None
 
 
+def get_input_devices() -> list[dict]:
+    try:
+        devices = sd.query_devices()
+        hostapis = sd.query_hostapis()
+    except Exception as e:
+        logger.warning(f"Failed to query audio devices: {e}")
+        return []
+
+    results = []
+    for idx, dev in enumerate(devices):
+        if dev["max_input_channels"] > 0:
+            hostapi_name = hostapis[dev["hostapi"]]["name"]
+            results.append({
+                "id": idx,
+                "name": dev["name"],
+                "hostapi": hostapi_name,
+                "max_input_channels": dev["max_input_channels"],
+                "default_samplerate": int(dev["default_samplerate"]),
+            })
+    return results
+
+
+def find_device_id_by_name(name: str, hostapi: str = "") -> Optional[int]:
+    try:
+        devices = sd.query_devices()
+        hostapis = sd.query_hostapis()
+    except Exception:
+        return None
+
+    for idx, dev in enumerate(devices):
+        if dev["max_input_channels"] > 0 and dev["name"] == name:
+            if hostapi:
+                dev_hostapi = hostapis[dev["hostapi"]]["name"]
+                if dev_hostapi == hostapi:
+                    return idx
+            else:
+                return idx
+
+    if hostapi:
+        for idx, dev in enumerate(devices):
+            if dev["max_input_channels"] > 0 and dev["name"] == name:
+                return idx
+
+    return None
+
+
 def check_channel_support(device_id: int, channels: int, samplerate: int) -> bool:
     try:
         sd.check_input_settings(device=device_id, samplerate=samplerate, channels=channels)
@@ -38,11 +84,12 @@ def get_supported_sample_rates(device_id: int, channels: int = 1) -> list[int]:
     return supported
 
 
-def get_optimal_audio_settings() -> Tuple[int, int, str]:
-    device_id = get_default_input_device_id()
+def get_optimal_audio_settings(device_id: Optional[int] = None) -> Tuple[int, int, str]:
+    if device_id is None:
+        device_id = get_default_input_device_id()
 
     if device_id is None:
-        logger.info("No default input device found, using required settings")
+        logger.info("No input device found, using required settings")
         return REQUIRED_SAMPLE_RATE, REQUIRED_CHANNELS, REQUIRED_DTYPE
 
     try:

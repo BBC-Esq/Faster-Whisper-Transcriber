@@ -15,7 +15,7 @@ class ClipboardSideWindow(QWidget):
     always_on_top_changed = Signal(bool)
     append_mode_changed = Signal(bool)
 
-    def __init__(self, parent: QWidget | None = None, width: int = 350):
+    def __init__(self, parent: QWidget | None = None, width: int = 400):
         super().__init__(parent)
 
         self._always_on_top = True
@@ -27,7 +27,7 @@ class ClipboardSideWindow(QWidget):
         self._side: str = "right"
         self._last_host_rect: QRect | None = None
         self._desired_width = width
-        self._default_height = 180
+        self._default_height = 160
 
         self.setWindowTitle("Clipboard")
         self._apply_window_flags()
@@ -41,51 +41,49 @@ class ClipboardSideWindow(QWidget):
         self._text_display.setPlaceholderText("Your transcription will appear here.")
         layout.addWidget(self._text_display, 1)
 
-        actions = QHBoxLayout()
-        actions.setSpacing(10)
+        controls = QHBoxLayout()
+        controls.setSpacing(10)
 
         copy_btn = QPushButton("Copy")
+        copy_btn.setObjectName("copyButton")
+        copy_btn.setFixedHeight(32)
+        copy_btn.setMinimumWidth(80)
         copy_btn.setToolTip("Copy the current text to your clipboard")
         copy_btn.clicked.connect(self._copy_to_clipboard)
-        actions.addWidget(copy_btn)
+        controls.addWidget(copy_btn)
 
         clear_btn = QPushButton("Clear")
+        clear_btn.setObjectName("clearButton")
+        clear_btn.setFixedHeight(32)
+        clear_btn.setMinimumWidth(80)
         clear_btn.setToolTip("Clear the clipboard panel")
         clear_btn.clicked.connect(self._text_display.clear)
-        actions.addWidget(clear_btn)
+        controls.addWidget(clear_btn)
+
+        controls.addStretch(1)
 
         self._append_checkbox = QCheckBox("Append")
         self._append_checkbox.setToolTip("Append new transcriptions instead of replacing")
         self._append_checkbox.setChecked(False)
         self._append_checkbox.toggled.connect(self._on_append_toggled)
-        actions.addWidget(self._append_checkbox)
-
-        actions.addStretch(1)
-
-        layout.addLayout(actions)
-
-        bottom_bar = QHBoxLayout()
-        bottom_bar.setContentsMargins(0, 0, 0, 0)
-        bottom_bar.setSpacing(10)
+        controls.addWidget(self._append_checkbox)
 
         self._on_top_checkbox = QCheckBox("Always on Top")
         self._on_top_checkbox.setToolTip("Keep this window above other windows")
         self._on_top_checkbox.setChecked(self._always_on_top)
         self._on_top_checkbox.toggled.connect(self._on_always_on_top_toggled)
-        bottom_bar.addWidget(self._on_top_checkbox)
-
-        bottom_bar.addStretch(1)
+        controls.addWidget(self._on_top_checkbox)
 
         self._dock_button = QPushButton("Dock")
         self._dock_button.setToolTip("Re-attach to main window")
         self._dock_button.setFixedWidth(60)
         self._dock_button.clicked.connect(self._request_dock)
         self._dock_button.hide()
-        bottom_bar.addWidget(self._dock_button)
+        controls.addWidget(self._dock_button)
 
-        layout.addLayout(bottom_bar)
+        layout.addLayout(controls)
 
-        self.setMinimumSize(350, 180)
+        self.setMinimumSize(400, 160)
         self.resize(self._desired_width, self._default_height)
         self.hide()
 
@@ -220,7 +218,7 @@ class ClipboardSideWindow(QWidget):
         self.set_docked(True)
 
         if animate:
-            self._run_animation(start_rect, end_rect, 180, QEasingCurve.OutCubic)
+            self._run_animation(start_rect, end_rect, 160, QEasingCurve.OutCubic)
         else:
             self.setGeometry(end_rect)
             self._schedule_end_internal_move()

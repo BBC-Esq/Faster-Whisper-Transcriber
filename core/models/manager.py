@@ -51,8 +51,8 @@ def _is_network_error(exception: Exception) -> bool:
 class _LoaderSignals(QObject):
     model_loaded = Signal(object, str, str, str, str)
     error_occurred = Signal(str, str)
-    download_started = Signal(str, int, str)
-    download_progress = Signal(int, int, str)
+    download_started = Signal(str, object, str)
+    download_progress = Signal(object, object, str)
     download_finished = Signal(str, str)
     download_cancelled = Signal(str)
     loading_started = Signal(str, str)
@@ -226,8 +226,8 @@ class _ModelLoaderRunnable(QRunnable):
 class ModelManager(QObject):
     model_loaded = Signal(str, str, str)
     model_error = Signal(str)
-    download_started = Signal(str, int)
-    download_progress = Signal(int, int)
+    download_started = Signal(str, object)
+    download_progress = Signal(object, object)
     download_finished = Signal(str)
     download_cancelled = Signal()
     loading_started = Signal(str)
@@ -328,9 +328,18 @@ class ModelManager(QObject):
             self.model_error.emit(error)
 
     def cleanup(self) -> None:
+        import time as _time
+
+        _t = _time.perf_counter()
         if self._cancel_event:
             self._cancel_event.set()
+        logger.info(f"[SHUTDOWN]   MM cancel_event.set(): {_time.perf_counter() - _t:.3f}s")
+
+        _t = _time.perf_counter()
         self._thread_pool.waitForDone(5000)
+        logger.info(f"[SHUTDOWN]   MM waitForDone(5000): {_time.perf_counter() - _t:.3f}s")
+
+        _t = _time.perf_counter()
         with QMutexLocker(self._model_mutex):
             if self._model is not None:
                 _unload_model(self._model)
@@ -338,4 +347,6 @@ class ModelManager(QObject):
                 self._model = None
                 self._model_version = None
                 gc.collect()
+        logger.info(f"[SHUTDOWN]   MM unload+gc: {_time.perf_counter() - _t:.3f}s")
+
         logger.debug("ModelManager cleanup complete")
