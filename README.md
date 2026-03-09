@@ -1,39 +1,29 @@
-# 🎙️ Faster Whisper Transcriber
+<div align="center">
+  
+<img width="768" height="193" alt="splash" src="https://github.com/user-attachments/assets/f601267a-541a-4fe7-afc2-36921a43dd5e" />
 
-> Voice-to-text transcription powered by CTranslate2 — speak, transcribe, and paste into your favorite LLM in seconds.
+### Reliably transcribe your voice or an audio file on CPU or using GPU accleration!
+### Requires [Python 3.11](https://www.python.org/downloads/release/python-3119/), [3.12](https://www.python.org/downloads/release/python-31210/) or [3.13](https://www.python.org/downloads/release/python-31311/) and 🎵 [FFmpeg](https://github.com/BtbN/FFmpeg-Builds/releases/tag/latest)
+**(Make sure FFMPEG is added to your system path)**
 
-<img width="530" height="387" alt="image" src="https://github.com/user-attachments/assets/aa205c1d-61d6-4950-be3c-d64d8cae68f2" />
+<img width="349" height="209" alt="image" src="https://github.com/user-attachments/assets/4a91d98d-e480-4e81-82a3-5c62621d79d3" /><img width="350" height="210" alt="image" src="https://github.com/user-attachments/assets/6cb43e24-669f-4b5f-9b27-16f635b9514a" />
+<br>
+</div>
 
-## ✨ Features
+## ⚙️ Windows Installer
+> Download and run [```FasterWhisperTranscriber_Setup.exe```](https://github.com/BBC-Esq/Faster-Whisper-Transcriber/releases/latest/download/FasterWhisperTranscriber_Setup.exe).
 
-- 🎤 **Record & Transcribe**
-- 📁 **Transcribe Files**
-- ⚡ **GPU Accelerated**
-
-## 📋 Compatibility
-- Compatible with [Python 3.11](https://www.python.org/downloads/release/python-3119/), [3.12](https://www.python.org/downloads/release/python-31210/) or [3.13](https://www.python.org/downloads/release/python-31311/)
-
-## 🚀 Installation
-```bash
-# 1. Download and extract the latest release, then navigate to the folder containing main.py
-
-# 2. Create and activate virtual environment
+## 💻 Install And Run from Virtual Environment
+> Download the latest release...unzip and extract...go to the directory containing ```main.py```...run these commands in order:
+```
 python -m venv .
+```
+```
 .\Scripts\activate
-
-# 3. Install dependencies
+```
+```
 python install.py
 ```
-
-## 💡 Usage
-```bash
-# Activate environment and start
-.\Scripts\activate
+```
 python main.py
 ```
-
-1. **Select a model** and click "Update Settings" (first use will download the model automatically)
-2. **Record** your voice or **select an audio file** to transcribe
-3. **Paste** anywhere with `Ctrl+V` — the transcription is already in your clipboard!
-
-> **Note:** The "Copy to Clipboard" button in the sidebar lets you edit and re-copy the transcription if needed.
