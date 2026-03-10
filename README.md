@@ -6,8 +6,7 @@
 ### Requires [Python 3.11](https://www.python.org/downloads/release/python-3119/), [3.12](https://www.python.org/downloads/release/python-31210/) or [3.13](https://www.python.org/downloads/release/python-31311/) and 🎵 [FFmpeg](https://github.com/BtbN/FFmpeg-Builds/releases/tag/latest)
 **(Make sure FFMPEG is added to your system path)**
 
-<img width="659" height="190" alt="image" src="https://github.com/user-attachments/assets/093ea17b-6d9b-470c-9c95-b7334f7e93b2" />
-
+<img width="349" height="209" alt="image" src="https://github.com/user-attachments/assets/4a91d98d-e480-4e81-82a3-5c62621d79d3" /><img width="350" height="210" alt="image" src="https://github.com/user-attachments/assets/6cb43e24-669f-4b5f-9b27-16f635b9514a" />
 <br>
 </div>
 
