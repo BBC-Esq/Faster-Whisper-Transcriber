@@ -35,6 +35,11 @@ class ConfigManager:
         "supported_quantizations": {"cpu": [], "cuda": []},
         "curate_transcription": True,
         "clipboard_append_mode": False,
+        "without_timestamps": True,
+        "word_timestamps": False,
+        "beam_size": 5,
+        "vad_filter": True,
+        "condition_on_previous_text": False,
     }
 
     VALIDATION_SCHEMA = {
@@ -45,6 +50,11 @@ class ConfigManager:
         "show_clipboard_window": {"type": bool},
         "curate_transcription": {"type": bool},
         "clipboard_append_mode": {"type": bool},
+        "without_timestamps": {"type": bool},
+        "word_timestamps": {"type": bool},
+        "beam_size": {"type": int, "validator": "_validate_beam_size"},
+        "vad_filter": {"type": bool},
+        "condition_on_previous_text": {"type": bool},
     }
 
     def __init__(self):
@@ -116,6 +126,11 @@ class ConfigManager:
         if valid_models and value not in valid_models:
             return self.DEFAULT_CONFIG["model_name"]
         return value
+
+    def _validate_beam_size(self, value: Any) -> int:
+        if isinstance(value, int) and 1 <= value <= 20:
+            return value
+        return self.DEFAULT_CONFIG["beam_size"]
 
     def load_config(self) -> dict[str, Any]:
         return copy.deepcopy(self._ensure_cache())

@@ -18,7 +18,8 @@ QPushButton#recordButton:pressed {
     background: rgba(89, 160, 255, 0.18);
 }
 
-QPushButton#copyButton:hover, QPushButton#clearButton:hover {
+QPushButton#copyButton:hover, QPushButton#clearButton:hover,
+QPushButton#updateButton:hover, QPushButton#closeButton:hover {
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.15);
 }

@@ -10,6 +10,8 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QWidget,
     QGroupBox,
+    QCheckBox,
+    QSpinBox,
 )
 
 from core.models.metadata import ModelMetadata
@@ -24,6 +26,7 @@ class SettingsDialog(QDialog):
     model_update_requested = Signal(str, str, str)
     audio_device_changed = Signal(str, str)
     task_mode_changed = Signal(str)
+    whisper_settings_changed = Signal(object)
 
     def __init__(
         self,
@@ -33,18 +36,26 @@ class SettingsDialog(QDialog):
         current_settings: dict[str, str],
         current_task_mode: str = "transcribe",
         current_audio_device: dict[str, str] | None = None,
+        current_whisper_settings: dict | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Settings")
         self.setModal(True)
-        self.setMinimumWidth(300)
-        self.resize(300, self.sizeHint().height())
+        self.setMinimumWidth(600)
+        self.resize(600, self.sizeHint().height())
 
         self.cuda_available = cuda_available
         self.supported_quantizations = supported_quantizations
         self.current_settings = dict(current_settings)
         self.current_task_mode = current_task_mode
         self.current_audio_device = current_audio_device or {"name": "", "hostapi": ""}
+        self.current_whisper_settings = current_whisper_settings or {
+            "without_timestamps": True,
+            "word_timestamps": False,
+            "beam_size": 5,
+            "vad_filter": True,
+            "condition_on_previous_text": False,
+        }
 
         self._input_devices = get_input_devices()
 
@@ -54,9 +65,15 @@ class SettingsDialog(QDialog):
         self._check_for_changes()
 
     def _build_ui(self) -> None:
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(16, 16, 16, 16)
-        layout.setSpacing(12)
+        outer_layout = QVBoxLayout(self)
+        outer_layout.setContentsMargins(16, 16, 16, 16)
+        outer_layout.setSpacing(12)
+
+        columns_layout = QHBoxLayout()
+        columns_layout.setSpacing(16)
+
+        left_column = QVBoxLayout()
+        left_column.setSpacing(12)
 
         model_group = QGroupBox("Whisper Model")
         model_form = QFormLayout(model_group)
@@ -75,7 +92,7 @@ class SettingsDialog(QDialog):
         self.quantization_dropdown = QComboBox()
         model_form.addRow("Precision", self.quantization_dropdown)
 
-        layout.addWidget(model_group)
+        left_column.addWidget(model_group)
 
         task_group = QGroupBox("Task")
         task_form = QFormLayout(task_group)
@@ -85,7 +102,7 @@ class SettingsDialog(QDialog):
         self.task_dropdown = QComboBox()
         task_form.addRow("Mode", self.task_dropdown)
 
-        layout.addWidget(task_group)
+        left_column.addWidget(task_group)
 
         audio_group = QGroupBox("Audio Input")
         audio_form = QFormLayout(audio_group)
@@ -99,7 +116,56 @@ class SettingsDialog(QDialog):
             self.audio_device_dropdown.addItem(display, dev)
         audio_form.addRow("Input Device", self.audio_device_dropdown)
 
-        layout.addWidget(audio_group)
+        left_column.addWidget(audio_group)
+        left_column.addStretch(1)
+
+        columns_layout.addLayout(left_column, 1)
+
+        right_column = QVBoxLayout()
+        right_column.setSpacing(12)
+
+        whisper_group = QGroupBox("Faster Whisper Settings")
+        whisper_form = QFormLayout(whisper_group)
+        whisper_form.setHorizontalSpacing(12)
+        whisper_form.setVerticalSpacing(10)
+
+        self.without_timestamps_cb = QCheckBox()
+        self.without_timestamps_cb.setToolTip(
+            "Skip timestamp generation for faster output"
+        )
+        whisper_form.addRow("Without Timestamps", self.without_timestamps_cb)
+
+        self.word_timestamps_cb = QCheckBox()
+        self.word_timestamps_cb.setToolTip(
+            "Extract start/end time for each individual word"
+        )
+        whisper_form.addRow("Word Timestamps", self.word_timestamps_cb)
+
+        self.beam_size_spin = QSpinBox()
+        self.beam_size_spin.setRange(1, 20)
+        self.beam_size_spin.setToolTip(
+            "Number of beams for decoding (higher = more accurate, slower)"
+        )
+        whisper_form.addRow("Beam Size", self.beam_size_spin)
+
+        self.vad_filter_cb = QCheckBox()
+        self.vad_filter_cb.setToolTip(
+            "Filter out non-speech segments using Silero VAD"
+        )
+        whisper_form.addRow("VAD Filter", self.vad_filter_cb)
+
+        self.condition_on_previous_cb = QCheckBox()
+        self.condition_on_previous_cb.setToolTip(
+            "Use previous output as context for the next segment"
+        )
+        whisper_form.addRow("Condition on Previous", self.condition_on_previous_cb)
+
+        right_column.addWidget(whisper_group)
+        right_column.addStretch(1)
+
+        columns_layout.addLayout(right_column, 1)
+
+        outer_layout.addLayout(columns_layout)
 
         button_row = QHBoxLayout()
         button_row.setSpacing(10)
@@ -111,12 +177,13 @@ class SettingsDialog(QDialog):
         button_row.addWidget(self.update_btn)
 
         close_btn = QPushButton("Close")
+        close_btn.setObjectName("closeButton")
         close_btn.clicked.connect(self.reject)
         button_row.addWidget(close_btn)
 
         self.update_btn.setFixedHeight(35)
         close_btn.setFixedHeight(35)
-        layout.addLayout(button_row)
+        outer_layout.addLayout(button_row)
 
     def _setup_connections(self) -> None:
         self.model_dropdown.currentTextChanged.connect(self._update_quantization_options)
@@ -127,6 +194,11 @@ class SettingsDialog(QDialog):
         self.quantization_dropdown.currentTextChanged.connect(self._check_for_changes)
         self.task_dropdown.currentTextChanged.connect(self._check_for_changes)
         self.audio_device_dropdown.currentIndexChanged.connect(self._check_for_changes)
+        self.without_timestamps_cb.toggled.connect(self._check_for_changes)
+        self.word_timestamps_cb.toggled.connect(self._check_for_changes)
+        self.beam_size_spin.valueChanged.connect(self._check_for_changes)
+        self.vad_filter_cb.toggled.connect(self._check_for_changes)
+        self.condition_on_previous_cb.toggled.connect(self._check_for_changes)
 
     def _populate_from_settings(self) -> None:
         self.model_dropdown.setCurrentText(self.current_settings.get("model_name", "base.en"))
@@ -138,6 +210,22 @@ class SettingsDialog(QDialog):
         self._update_task_availability()
         self.task_dropdown.setCurrentText(self.current_task_mode)
         self._select_audio_device()
+
+        self.without_timestamps_cb.setChecked(
+            self.current_whisper_settings.get("without_timestamps", False)
+        )
+        self.word_timestamps_cb.setChecked(
+            self.current_whisper_settings.get("word_timestamps", False)
+        )
+        self.beam_size_spin.setValue(
+            self.current_whisper_settings.get("beam_size", 5)
+        )
+        self.vad_filter_cb.setChecked(
+            self.current_whisper_settings.get("vad_filter", False)
+        )
+        self.condition_on_previous_cb.setChecked(
+            self.current_whisper_settings.get("condition_on_previous_text", True)
+        )
 
     def _select_audio_device(self) -> None:
         saved_name = self.current_audio_device.get("name", "")
@@ -216,11 +304,22 @@ class SettingsDialog(QDialog):
             or data["hostapi"] != self.current_audio_device.get("hostapi", "")
         )
 
+    def _whisper_settings_selection_changed(self) -> bool:
+        current = {
+            "without_timestamps": self.without_timestamps_cb.isChecked(),
+            "word_timestamps": self.word_timestamps_cb.isChecked(),
+            "beam_size": self.beam_size_spin.value(),
+            "vad_filter": self.vad_filter_cb.isChecked(),
+            "condition_on_previous_text": self.condition_on_previous_cb.isChecked(),
+        }
+        return current != self.current_whisper_settings
+
     def _check_for_changes(self) -> None:
         model_changed = self._model_settings_changed()
         task_changed = self._task_mode_selection_changed()
         audio_changed = self._audio_device_selection_changed()
-        has_changes = model_changed or task_changed or audio_changed
+        whisper_changed = self._whisper_settings_selection_changed()
+        has_changes = model_changed or task_changed or audio_changed or whisper_changed
         self.update_btn.setEnabled(has_changes)
         if model_changed:
             self.update_btn.setText("Reload Model")
@@ -244,5 +343,15 @@ class SettingsDialog(QDialog):
                 self.audio_device_changed.emit("", "")
             else:
                 self.audio_device_changed.emit(data["name"], data["hostapi"])
+
+        if self._whisper_settings_selection_changed():
+            settings = {
+                "without_timestamps": self.without_timestamps_cb.isChecked(),
+                "word_timestamps": self.word_timestamps_cb.isChecked(),
+                "beam_size": self.beam_size_spin.value(),
+                "vad_filter": self.vad_filter_cb.isChecked(),
+                "condition_on_previous_text": self.condition_on_previous_cb.isChecked(),
+            }
+            self.whisper_settings_changed.emit(settings)
 
         self.accept()

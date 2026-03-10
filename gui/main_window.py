@@ -677,6 +677,13 @@ class MainWindow(QMainWindow):
             "name": self.settings.value(SETTINGS_AUDIO_DEVICE_NAME, ""),
             "hostapi": self.settings.value(SETTINGS_AUDIO_DEVICE_HOSTAPI, ""),
         }
+        whisper_settings = {
+            "without_timestamps": config_manager.get_value("without_timestamps", False),
+            "word_timestamps": config_manager.get_value("word_timestamps", False),
+            "beam_size": config_manager.get_value("beam_size", 5),
+            "vad_filter": config_manager.get_value("vad_filter", False),
+            "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", True),
+        }
         dlg = SettingsDialog(
             parent=self,
             cuda_available=self.cuda_available,
@@ -684,10 +691,12 @@ class MainWindow(QMainWindow):
             current_settings=self.loaded_model_settings,
             current_task_mode=self.task_mode,
             current_audio_device=current_audio,
+            current_whisper_settings=whisper_settings,
         )
         dlg.model_update_requested.connect(self._on_settings_update_requested)
         dlg.audio_device_changed.connect(self._on_audio_device_changed)
         dlg.task_mode_changed.connect(self._on_task_mode_changed)
+        dlg.whisper_settings_changed.connect(self._on_whisper_settings_changed)
         dlg.exec()
 
     @Slot(str, str, str)
@@ -762,6 +771,11 @@ class MainWindow(QMainWindow):
         self.task_mode = mode
         self._save_config("task_mode", self.task_mode)
         self.controller.set_task_mode(self.task_mode)
+
+    def _on_whisper_settings_changed(self, settings: dict) -> None:
+        for key, value in settings.items():
+            self._save_config(key, value)
+        self.controller.set_whisper_params(settings)
 
     @Slot(str, str, str)
     def _on_model_loaded_success(

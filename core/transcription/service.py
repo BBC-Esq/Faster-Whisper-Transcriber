@@ -31,6 +31,7 @@ class _TranscriptionRunnable(QRunnable):
         batch_size: int | None = None,
         get_current_version_func=None,
         cancel_event: threading.Event | None = None,
+        whisper_params: dict | None = None,
     ) -> None:
         super().__init__()
         self.setAutoDelete(True)
@@ -43,6 +44,7 @@ class _TranscriptionRunnable(QRunnable):
         self.get_current_version = get_current_version_func
         self.cancel_event = cancel_event or threading.Event()
         self.signals = _TranscriberSignals()
+        self.whisper_params = whisper_params or {}
 
     def _is_cancelled(self) -> bool:
         return self.cancel_event.is_set()
@@ -61,6 +63,14 @@ class _TranscriptionRunnable(QRunnable):
 
             logger.info(f"Starting transcription: {self.audio_file}")
 
+            extra_kwargs = {
+                "without_timestamps": self.whisper_params.get("without_timestamps", True),
+                "word_timestamps": self.whisper_params.get("word_timestamps", False),
+                "beam_size": self.whisper_params.get("beam_size", 5),
+                "vad_filter": self.whisper_params.get("vad_filter", True),
+                "condition_on_previous_text": self.whisper_params.get("condition_on_previous_text", False),
+            }
+
             if self.batch_size is not None and int(self.batch_size) > 1:
                 batched_model = BatchedInferencePipeline(model=self.model)
                 segments, info = batched_model.transcribe(
@@ -68,12 +78,14 @@ class _TranscriptionRunnable(QRunnable):
                     language=None,
                     task=self.task_mode,
                     batch_size=int(self.batch_size),
+                    **extra_kwargs,
                 )
             else:
                 segments, info = self.model.transcribe(
                     str(self.audio_file),
                     language=None,
                     task=self.task_mode,
+                    **extra_kwargs,
                 )
 
             total_duration = info.duration if info and hasattr(info, 'duration') else 0
@@ -127,9 +139,14 @@ class TranscriptionService(QObject):
         self._get_model_version_func = None
         self._cancel_event: threading.Event | None = None
         self._is_transcribing = False
+        self._whisper_params: dict = {}
 
     def set_model_version_provider(self, func) -> None:
         self._get_model_version_func = func
+
+    def set_whisper_params(self, params: dict) -> None:
+        self._whisper_params = dict(params)
+        logger.debug(f"Whisper params updated: {self._whisper_params}")
 
     def is_transcribing(self) -> bool:
         return self._is_transcribing
@@ -170,6 +187,7 @@ class TranscriptionService(QObject):
                 batch_size=batch_size,
                 get_current_version_func=self._get_model_version_func,
                 cancel_event=self._cancel_event,
+                whisper_params=self._whisper_params,
             )
             runnable.signals.transcription_done.connect(self._on_transcription_done)
             runnable.signals.progress_updated.connect(self._on_progress_updated)

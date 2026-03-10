@@ -53,6 +53,7 @@ class TranscriberController(QObject):
         self.transcription_service.set_model_version_provider(
             self._get_current_model_version
         )
+        self._load_whisper_params()
 
         self._connect_signals()
         logger.info("TranscriberController initialized")
@@ -60,6 +61,19 @@ class TranscriberController(QObject):
     def _get_current_model_version(self) -> str | None:
         _, version = self.model_manager.get_model()
         return version
+
+    def _load_whisper_params(self) -> None:
+        params = {
+            "without_timestamps": config_manager.get_value("without_timestamps", False),
+            "word_timestamps": config_manager.get_value("word_timestamps", False),
+            "beam_size": config_manager.get_value("beam_size", 5),
+            "vad_filter": config_manager.get_value("vad_filter", False),
+            "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", True),
+        }
+        self.transcription_service.set_whisper_params(params)
+
+    def set_whisper_params(self, params: dict) -> None:
+        self.transcription_service.set_whisper_params(params)
 
     def set_task_mode(self, mode: str) -> None:
         self.transcription_service.set_task_mode(mode)
