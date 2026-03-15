@@ -1,0 +1,57 @@
+# Virtual environment
+working/
+Lib/
+Scripts/
+Include/
+share/
+pyvenv.cfg
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+
+# Build artifacts
+*.exe
+
+# Logs
+logs/
+
+# Runtime/temp
+runtime/
+.lock
+nul
+
+# Backup
+backup/
+
+# Test files
+TEST FILES/
+
+# Tools (embedded Python, uv)
+tools/
+
+# Installer
+installer/
+installer-output/
+
+# Local docs
+explanation.md
+
+# IDE
+.vscode/
+.idea/
+
+# Compiled files listing
+compiled_files.txt
+
+# OS files
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Local config
+settings.yaml
+config.yaml

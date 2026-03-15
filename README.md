@@ -2,9 +2,8 @@
   
 <img width="768" height="193" alt="splash" src="https://github.com/user-attachments/assets/f601267a-541a-4fe7-afc2-36921a43dd5e" />
 
-### Reliably transcribe your voice or an audio file on CPU or using GPU accleration!
-### Requires [Python 3.11](https://www.python.org/downloads/release/python-3119/), [3.12](https://www.python.org/downloads/release/python-31210/) or [3.13](https://www.python.org/downloads/release/python-31311/) and 🎵 [FFmpeg](https://github.com/BtbN/FFmpeg-Builds/releases/tag/latest)
-**(Make sure FFMPEG is added to your system path)**
+### Reliably transcribe your voice or an audio file on CPU or using GPU acceleration!
+### Requires [Python 3.11](https://www.python.org/downloads/release/python-3119/), [3.12](https://www.python.org/downloads/release/python-31210/) or [3.13](https://www.python.org/downloads/release/python-31311/)
 
 <img width="659" height="190" alt="image" src="https://github.com/user-attachments/assets/093ea17b-6d9b-470c-9c95-b7334f7e93b2" />
 
