@@ -3,7 +3,6 @@
 <img width="621" height="367" alt="image" src="https://github.com/user-attachments/assets/7fa15938-5c18-424b-8f2b-83b30380e523" />
 
 ### Reliably transcribe your voice or an audio file on CPU or GPU!
-### Requires [Python 3.11](https://www.python.org/downloads/release/python-3119/), [3.12](https://www.python.org/downloads/release/python-31210/) or [3.13](https://www.python.org/downloads/release/python-31311/)
 
 <img width="659" height="190" alt="image" src="https://github.com/user-attachments/assets/093ea17b-6d9b-470c-9c95-b7334f7e93b2" />
 
