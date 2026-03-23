@@ -595,7 +595,7 @@ class MainWindow(QMainWindow):
         self.statusBar().setSizeGripEnabled(True)
 
         self.resize(_DEFAULT_MAIN_WIDTH, _DEFAULT_MAIN_HEIGHT)
-        self.setMinimumSize(250, 190)
+        self.setMinimumSize(_DEFAULT_MAIN_WIDTH, _DEFAULT_MAIN_HEIGHT)
         self.setWindowFlag(Qt.WindowStaysOnTopHint)
 
     def _build_main_group(self) -> QGroupBox:
