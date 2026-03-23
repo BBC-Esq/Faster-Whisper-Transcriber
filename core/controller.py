@@ -20,6 +20,7 @@ class TranscriberController(QObject):
     update_button_signal = Signal(str)
     enable_widgets_signal = Signal(bool)
     text_ready_signal = Signal(str)
+    result_ready_signal = Signal(object)
     model_loaded_signal = Signal(str, str, str)
     error_occurred = Signal(str, str)
     transcription_cancelled_signal = Signal()
@@ -28,6 +29,10 @@ class TranscriberController(QObject):
     model_download_finished = Signal(str)
     model_download_cancelled = Signal()
     model_loading_started = Signal(str)
+
+    batch_progress = Signal(int, int, str)
+    batch_completed = Signal(str)
+    batch_error = Signal(str)
 
     def __init__(
         self,
@@ -54,6 +59,8 @@ class TranscriberController(QObject):
             self._get_current_model_version
         )
         self._load_whisper_params()
+
+        self._batch_processor = None
 
         self._connect_signals()
         logger.info("TranscriberController initialized")
@@ -107,6 +114,9 @@ class TranscriberController(QObject):
         self.transcription_service.transcription_completed.connect(
             self._on_transcription_completed
         )
+        self.transcription_service.transcription_completed_with_result.connect(
+            self._on_transcription_completed_with_result
+        )
         self.transcription_service.transcription_error.connect(
             self._on_transcription_error
         )
@@ -158,6 +168,53 @@ class TranscriberController(QObject):
                 "Transcription Error", "No model is loaded to process audio"
             )
 
+    # --- Batch processing ---
+
+    def start_batch_processing(self, files, output_format, output_directory,
+                                batch_size, task_mode, whisper_params) -> None:
+        from core.transcription.batch_processor import BatchProcessor
+
+        model, model_version = self.model_manager.get_model()
+        if not model or not model_version:
+            self.batch_error.emit("No model is loaded to process audio")
+            return
+
+        self._batch_processor = BatchProcessor(
+            files=files,
+            model=model,
+            output_format=output_format,
+            output_directory=output_directory,
+            batch_size=batch_size,
+            task_mode=task_mode,
+            whisper_params=whisper_params,
+        )
+        self._batch_processor.progress.connect(self._on_batch_progress)
+        self._batch_processor.finished.connect(self._on_batch_completed)
+        self._batch_processor.error.connect(self._on_batch_error)
+        self._batch_processor.start()
+
+    def stop_batch_processing(self) -> None:
+        if self._batch_processor:
+            self._batch_processor.request_stop()
+
+    def is_batch_processing(self) -> bool:
+        return self._batch_processor is not None and self._batch_processor.isRunning()
+
+    @Slot(int, int, str)
+    def _on_batch_progress(self, current: int, total: int, message: str) -> None:
+        self.batch_progress.emit(current, total, message)
+
+    @Slot(str)
+    def _on_batch_completed(self, message: str) -> None:
+        self._batch_processor = None
+        self.batch_completed.emit(message)
+
+    @Slot(str)
+    def _on_batch_error(self, message: str) -> None:
+        self.batch_error.emit(message)
+
+    # --- Model signals ---
+
     @Slot(str, object)
     def _on_download_started(self, model_name: str, total_bytes: int) -> None:
         self.model_download_started.emit(model_name, total_bytes)
@@ -195,6 +252,8 @@ class TranscriberController(QObject):
         self.enable_widgets_signal.emit(True)
         self.error_occurred.emit("Model Error", error)
 
+    # --- Audio signals ---
+
     @Slot(str)
     def _on_audio_ready(self, audio_file: str) -> None:
         model, model_version = self.model_manager.get_model()
@@ -218,6 +277,8 @@ class TranscriberController(QObject):
         self.enable_widgets_signal.emit(True)
         self.error_occurred.emit("Audio Error", error)
 
+    # --- Transcription signals ---
+
     @Slot(int, int, float)
     def _on_transcription_progress(
         self, segment_num: int, total_segments: int, percent: float
@@ -232,6 +293,10 @@ class TranscriberController(QObject):
         self.text_ready_signal.emit(text)
         self.update_button_signal.emit("Click to Record")
         self.enable_widgets_signal.emit(True)
+
+    @Slot(object)
+    def _on_transcription_completed_with_result(self, result: object) -> None:
+        self.result_ready_signal.emit(result)
 
     @Slot(str)
     def _on_transcription_error(self, error: str) -> None:
@@ -249,6 +314,12 @@ class TranscriberController(QObject):
     def stop_all_threads(self) -> None:
         import time as _time
         logger.info("Stopping all threads")
+
+        if self._batch_processor and self._batch_processor.isRunning():
+            _t = _time.perf_counter()
+            self._batch_processor.request_stop()
+            self._batch_processor.wait(5000)
+            logger.info(f"[SHUTDOWN] batch_processor.stop(): {_time.perf_counter() - _t:.3f}s")
 
         _t = _time.perf_counter()
         self.model_manager.cancel_loading()

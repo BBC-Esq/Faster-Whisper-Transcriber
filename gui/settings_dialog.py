@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
 from core.models.metadata import ModelMetadata
 from core.audio.device_utils import get_input_devices
 from gui.styles import update_button_property
+from gui.file_panel import FileTypesDialog, SUPPORTED_AUDIO_EXTENSIONS
 from core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -28,6 +29,8 @@ class SettingsDialog(QDialog):
     task_mode_changed = Signal(str)
     whisper_settings_changed = Signal(object)
 
+    file_types_changed = Signal(object)
+
     def __init__(
         self,
         parent: QWidget | None,
@@ -37,6 +40,7 @@ class SettingsDialog(QDialog):
         current_task_mode: str = "transcribe",
         current_audio_device: dict[str, str] | None = None,
         current_whisper_settings: dict | None = None,
+        current_ext_checked: dict[str, bool] | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -55,6 +59,9 @@ class SettingsDialog(QDialog):
             "beam_size": 5,
             "vad_filter": True,
             "condition_on_previous_text": False,
+        }
+        self._ext_checked = current_ext_checked or {
+            ext: True for ext in SUPPORTED_AUDIO_EXTENSIONS
         }
 
         self._input_devices = get_input_devices()
@@ -161,6 +168,17 @@ class SettingsDialog(QDialog):
         whisper_form.addRow("Condition on Previous", self.condition_on_previous_cb)
 
         right_column.addWidget(whisper_group)
+
+        file_types_row = QHBoxLayout()
+        file_types_row.addStretch(1)
+        self._file_types_btn = QPushButton("File Types...")
+        self._file_types_btn.setFixedHeight(28)
+        self._file_types_btn.setFixedWidth(100)
+        self._file_types_btn.setToolTip("Configure which audio/video file types to include in batch processing")
+        self._file_types_btn.clicked.connect(self._open_file_types_dialog)
+        file_types_row.addWidget(self._file_types_btn)
+        right_column.addLayout(file_types_row)
+
         right_column.addStretch(1)
 
         columns_layout.addLayout(right_column, 1)
@@ -212,7 +230,7 @@ class SettingsDialog(QDialog):
         self._select_audio_device()
 
         self.without_timestamps_cb.setChecked(
-            self.current_whisper_settings.get("without_timestamps", False)
+            self.current_whisper_settings.get("without_timestamps", True)
         )
         self.word_timestamps_cb.setChecked(
             self.current_whisper_settings.get("word_timestamps", False)
@@ -221,10 +239,10 @@ class SettingsDialog(QDialog):
             self.current_whisper_settings.get("beam_size", 5)
         )
         self.vad_filter_cb.setChecked(
-            self.current_whisper_settings.get("vad_filter", False)
+            self.current_whisper_settings.get("vad_filter", True)
         )
         self.condition_on_previous_cb.setChecked(
-            self.current_whisper_settings.get("condition_on_previous_text", True)
+            self.current_whisper_settings.get("condition_on_previous_text", False)
         )
 
     def _select_audio_device(self) -> None:
@@ -326,6 +344,12 @@ class SettingsDialog(QDialog):
         else:
             self.update_btn.setText("Update Settings")
         update_button_property(self.update_btn, "changed", has_changes)
+
+    def _open_file_types_dialog(self) -> None:
+        dlg = FileTypesDialog(self, self._ext_checked)
+        if dlg.exec() == QDialog.Accepted:
+            self._ext_checked = dlg.get_checked()
+            self.file_types_changed.emit(self._ext_checked)
 
     def _on_update_clicked(self) -> None:
         if self._model_settings_changed():

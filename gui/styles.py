@@ -1,8 +1,4 @@
 APP_STYLESHEET = """
-QPushButton {
-    border-radius: 9px;
-}
-
 QPushButton#recordButton {
     background: rgba(89, 160, 255, 0.16);
     border: 1px solid rgba(89, 160, 255, 0.22);
@@ -19,7 +15,10 @@ QPushButton#recordButton:pressed {
 }
 
 QPushButton#copyButton:hover, QPushButton#clearButton:hover,
-QPushButton#updateButton:hover, QPushButton#closeButton:hover {
+QPushButton#updateButton:hover, QPushButton#closeButton:hover,
+QPushButton#fileStartButton:hover, QPushButton#fileStopButton:hover,
+QPushButton#fileDockButton:hover, QPushButton#fileSelectButton:hover,
+QPushButton#fileTypesButton:hover {
     background: rgba(255, 255, 255, 0.08);
     border: 1px solid rgba(255, 255, 255, 0.15);
 }

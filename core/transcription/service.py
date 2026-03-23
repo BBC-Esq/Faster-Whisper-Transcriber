@@ -8,6 +8,7 @@ from PySide6.QtCore import QObject, Signal, QRunnable, QThreadPool
 
 from core.temp_file_manager import temp_file_manager
 from core.text.curation import curate_text
+from core.output.writers import SegmentData, TranscriptionResult
 from core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -15,6 +16,7 @@ logger = get_logger(__name__)
 
 class _TranscriberSignals(QObject):
     transcription_done = Signal(str)
+    transcription_done_with_result = Signal(object)
     progress_updated = Signal(int, int, float)
     error_occurred = Signal(str)
     cancelled = Signal()
@@ -91,6 +93,7 @@ class _TranscriptionRunnable(QRunnable):
             total_duration = info.duration if info and hasattr(info, 'duration') else 0
 
             text_parts = []
+            segment_data_list = []
             segment_count = 0
 
             for segment in segments:
@@ -101,6 +104,13 @@ class _TranscriptionRunnable(QRunnable):
 
                 segment_count += 1
                 text_parts.append(segment.text.lstrip())
+                segment_data_list.append(
+                    SegmentData(
+                        start=segment.start,
+                        end=segment.end,
+                        text=segment.text,
+                    )
+                )
 
                 if total_duration > 0:
                     progress_percent = min(100, (segment.end / total_duration) * 100)
@@ -110,7 +120,17 @@ class _TranscriptionRunnable(QRunnable):
 
             text = "\n".join(text_parts)
             logger.info(f"Transcription completed successfully ({segment_count} segments)")
+
+            result = TranscriptionResult(
+                text=text,
+                segments=segment_data_list,
+                language=info.language if info and hasattr(info, 'language') else None,
+                duration=info.duration if info and hasattr(info, 'duration') else None,
+                source_file=self.audio_file,
+            )
+
             self.signals.transcription_done.emit(text)
+            self.signals.transcription_done_with_result.emit(result)
 
         except Exception as e:
             if self._is_cancelled():
@@ -127,6 +147,7 @@ class _TranscriptionRunnable(QRunnable):
 class TranscriptionService(QObject):
     transcription_started = Signal()
     transcription_completed = Signal(str)
+    transcription_completed_with_result = Signal(object)
     transcription_progress = Signal(int, int, float)
     transcription_error = Signal(str)
     transcription_cancelled = Signal()
@@ -190,6 +211,9 @@ class TranscriptionService(QObject):
                 whisper_params=self._whisper_params,
             )
             runnable.signals.transcription_done.connect(self._on_transcription_done)
+            runnable.signals.transcription_done_with_result.connect(
+                self._on_transcription_done_with_result
+            )
             runnable.signals.progress_updated.connect(self._on_progress_updated)
             runnable.signals.error_occurred.connect(self._on_transcription_error)
             runnable.signals.cancelled.connect(self._on_transcription_cancelled)
@@ -211,6 +235,9 @@ class TranscriptionService(QObject):
                 logger.warning(f"Text curation failed: {e}")
 
         self.transcription_completed.emit(text)
+
+    def _on_transcription_done_with_result(self, result: object) -> None:
+        self.transcription_completed_with_result.emit(result)
 
     def _on_progress_updated(self, segment_num: int, total_segments: int, percent: float) -> None:
         self.transcription_progress.emit(segment_num, total_segments, percent)

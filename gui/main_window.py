@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from PySide6.QtCore import Qt, Slot, QRect, QEvent, Signal, QSettings, QByteArray, QTimer, QPointF, QSize
@@ -28,9 +29,12 @@ from core.controller import TranscriberController
 from core.models.metadata import ModelMetadata
 from core.audio.device_utils import find_device_id_by_name
 from core.hotkeys import GlobalHotkey
+from core.output.writers import write_output
+from core.monitoring.collectors import MetricsCollector
 from config.manager import config_manager
 from gui.styles import update_button_property
 from gui.clipboard_window import ClipboardSideWindow
+from gui.file_panel import FilePanelWindow
 from gui.settings_dialog import SettingsDialog
 from gui.visualizations import WaveformButton
 from core.logging_config import get_logger
@@ -54,11 +58,22 @@ SETTINGS_QUANTIZATION = "model/quantization"
 SETTINGS_TASK_MODE = "model/task_mode"
 SETTINGS_AUDIO_DEVICE_NAME = "audio/device_name"
 SETTINGS_AUDIO_DEVICE_HOSTAPI = "audio/device_hostapi"
+SETTINGS_FILE_PANEL_VISIBLE = "file_panel/visible"
+SETTINGS_FILE_PANEL_DOCKED = "file_panel/docked"
+SETTINGS_FILE_PANEL_GEOMETRY = "file_panel/geometry"
+SETTINGS_FILE_PANEL_MULTI_MODE = "file_panel/multi_mode"
+SETTINGS_FILE_PANEL_RECURSIVE = "file_panel/recursive"
+SETTINGS_FILE_PANEL_BATCH_SIZE = "file_panel/batch_size"
+SETTINGS_FILE_PANEL_FORMAT = "file_panel/format"
+SETTINGS_FILE_PANEL_OUTPUT_MODE = "file_panel/output_mode"
+SETTINGS_FILE_PANEL_CUSTOM_DIR = "file_panel/custom_output_dir"
+SETTINGS_FILE_PANEL_EXT_CHECKED = "file_panel/ext_checked"
+SETTINGS_FILE_PANEL_SELECTED_PATH = "file_panel/selected_path"
 
 _DOCK_GAP = 10
 
-_DEFAULT_MAIN_WIDTH = 250
-_DEFAULT_MAIN_HEIGHT = 160
+_DEFAULT_MAIN_WIDTH = 280
+_DEFAULT_MAIN_HEIGHT = 190
 _DEFAULT_CLIPBOARD_WIDTH = 250
 _DEFAULT_CLIPBOARD_HEIGHT = 160
 
@@ -133,55 +148,6 @@ def _create_clipboard_icon():
     return QIcon(px)
 
 
-class BatchSizeDialog(QDialog):
-    def __init__(self, parent: QWidget | None = None, default_value: int = 16):
-        super().__init__(parent)
-        self.setWindowTitle("Batch Size")
-        self.setModal(True)
-        self.setFixedWidth(250)
-
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(10, 10, 10, 10)
-        layout.setSpacing(5)
-
-        layout.addWidget(
-            QLabel(
-                "Set batch size for file transcription.\n"
-                "Use 1 for non-batched transcription."
-            )
-        )
-
-        row = QHBoxLayout()
-        row.setSpacing(5)
-        row.addWidget(QLabel("Batch size"))
-        self.spin = QSpinBox()
-        self.spin.setRange(1, 128)
-        self.spin.setValue(max(1, int(default_value)))
-        row.addWidget(self.spin, 1)
-        layout.addLayout(row)
-
-        button_row = QHBoxLayout()
-        button_row.setSpacing(8)
-
-        ok_btn = QPushButton("OK")
-        ok_btn.setFixedHeight(32)
-        ok_btn.setMinimumWidth(80)
-        ok_btn.clicked.connect(self.accept)
-
-        cancel_btn = QPushButton("Cancel")
-        cancel_btn.setFixedHeight(32)
-        cancel_btn.setMinimumWidth(80)
-        cancel_btn.clicked.connect(self.reject)
-
-        button_row.addStretch(1)
-        button_row.addWidget(ok_btn)
-        button_row.addWidget(cancel_btn)
-        layout.addLayout(button_row)
-
-    def batch_size(self) -> int:
-        return self.spin.value()
-
-
 class MainWindow(QMainWindow):
     hotkey_toggle_recording = Signal()
 
@@ -194,6 +160,8 @@ class MainWindow(QMainWindow):
         "clipboard_visible": False,
         "clipboard_always_on_top": True,
         "clipboard_docked": True,
+        "file_panel_visible": False,
+        "file_panel_docked": True,
     }
 
     def __init__(self, cuda_available: bool = False):
@@ -211,6 +179,7 @@ class MainWindow(QMainWindow):
         self.is_recording = False
         self.cuda_available = cuda_available
         self._clipboard_visible = False
+        self._file_panel_visible = False
         self._toggleable_widgets: list[QWidget] = []
         self._model_is_loaded = False
         self._is_loading_model = False
@@ -224,6 +193,20 @@ class MainWindow(QMainWindow):
         self.clipboard_window.always_on_top_changed.connect(
             self._on_clipboard_always_on_top_changed
         )
+
+        self.file_panel = FilePanelWindow(None, width=340)
+        self.file_panel.user_closed.connect(self._on_file_panel_closed)
+        self.file_panel.docked_changed.connect(
+            lambda d: logger.debug(f"File panel docked: {d}")
+        )
+        self.file_panel.transcribe_file_requested.connect(
+            self._on_file_panel_transcribe
+        )
+        self.file_panel.batch_start_requested.connect(self._on_batch_start)
+        self.file_panel.batch_stop_requested.connect(self._on_batch_stop)
+
+        self._metrics_collector = MetricsCollector(interval_ms=1000)
+        self._metrics_collector.metrics_updated.connect(self._on_metrics_updated)
 
         self._build_ui()
         self._setup_connections()
@@ -245,6 +228,8 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         if app := QApplication.instance():
             app.installEventFilter(self)
+
+        self._metrics_collector.start()
 
         logger.info("MainWindow initialized")
 
@@ -387,6 +372,37 @@ class MainWindow(QMainWindow):
 
         self._update_clipboard_button_text()
 
+        # Restore file panel state
+        file_panel_docked = self.settings.value(
+            SETTINGS_FILE_PANEL_DOCKED, self.DEFAULTS["file_panel_docked"], type=bool
+        )
+        self._file_panel_visible = self.settings.value(
+            SETTINGS_FILE_PANEL_VISIBLE,
+            self.DEFAULTS["file_panel_visible"],
+            type=bool,
+        )
+
+        if self._file_panel_visible:
+            if file_panel_docked:
+                self.file_panel.show_docked(
+                    self._host_rect_global(), gap=_DOCK_GAP, animate=False
+                )
+            else:
+                fp_geometry = self.settings.value(SETTINGS_FILE_PANEL_GEOMETRY)
+                if fp_geometry and isinstance(fp_geometry, QByteArray):
+                    self.file_panel.set_docked(False)
+                    self.file_panel.restoreGeometry(fp_geometry)
+                    self.file_panel.show()
+                else:
+                    self.file_panel.show_docked(
+                        self._host_rect_global(), gap=_DOCK_GAP, animate=False
+                    )
+
+        self._update_file_panel_button_text()
+
+        # Restore file panel internal settings
+        self._restore_file_panel_settings()
+
         try:
             config_manager.set_model_settings(model, quantization, device)
             config_manager.set_value("task_mode", task_mode)
@@ -441,8 +457,55 @@ class MainWindow(QMainWindow):
                 SETTINGS_CLIPBOARD_GEOMETRY, self.clipboard_window.saveGeometry()
             )
 
+        # Save file panel state
+        self.settings.setValue(SETTINGS_FILE_PANEL_VISIBLE, self._file_panel_visible)
+        self.settings.setValue(
+            SETTINGS_FILE_PANEL_DOCKED, self.file_panel.is_docked()
+        )
+        if not self.file_panel.is_docked():
+            self.settings.setValue(
+                SETTINGS_FILE_PANEL_GEOMETRY, self.file_panel.saveGeometry()
+            )
+
+        # Save file panel internal settings
+        self._save_file_panel_settings()
+
         self.settings.sync()
         logger.debug("State saved successfully")
+
+    def _save_file_panel_settings(self) -> None:
+        state = self.file_panel.get_panel_state()
+        self.settings.setValue(SETTINGS_FILE_PANEL_MULTI_MODE, state["multi_mode"])
+        self.settings.setValue(SETTINGS_FILE_PANEL_RECURSIVE, state["recursive"])
+        self.settings.setValue(SETTINGS_FILE_PANEL_BATCH_SIZE, state["batch_size"])
+        self.settings.setValue(SETTINGS_FILE_PANEL_FORMAT, state["format"])
+        self.settings.setValue(SETTINGS_FILE_PANEL_OUTPUT_MODE, state["output_mode_index"])
+        self.settings.setValue(SETTINGS_FILE_PANEL_CUSTOM_DIR, state["custom_output_dir"])
+        self.settings.setValue(SETTINGS_FILE_PANEL_SELECTED_PATH, state["selected_path"])
+        self.settings.setValue(
+            SETTINGS_FILE_PANEL_EXT_CHECKED,
+            json.dumps(self.file_panel.get_ext_checked()),
+        )
+
+    def _restore_file_panel_settings(self) -> None:
+        state = {
+            "multi_mode": self.settings.value(SETTINGS_FILE_PANEL_MULTI_MODE, False, type=bool),
+            "recursive": self.settings.value(SETTINGS_FILE_PANEL_RECURSIVE, False, type=bool),
+            "batch_size": self.settings.value(SETTINGS_FILE_PANEL_BATCH_SIZE, 16, type=int),
+            "format": self.settings.value(SETTINGS_FILE_PANEL_FORMAT, "txt"),
+            "output_mode_index": self.settings.value(SETTINGS_FILE_PANEL_OUTPUT_MODE, 0, type=int),
+            "custom_output_dir": self.settings.value(SETTINGS_FILE_PANEL_CUSTOM_DIR, ""),
+            "selected_path": self.settings.value(SETTINGS_FILE_PANEL_SELECTED_PATH, ""),
+        }
+        self.file_panel.restore_panel_state(state)
+
+        ext_json = self.settings.value(SETTINGS_FILE_PANEL_EXT_CHECKED, "")
+        if ext_json:
+            try:
+                ext_checked = json.loads(ext_json)
+                self.file_panel.set_ext_checked(ext_checked)
+            except (json.JSONDecodeError, TypeError):
+                pass
 
     def _center_on_screen(self) -> None:
         if screen := QApplication.primaryScreen():
@@ -462,6 +525,7 @@ class MainWindow(QMainWindow):
         self.controller.update_button_signal.connect(self._on_button_text_update)
         self.controller.enable_widgets_signal.connect(self.set_widgets_enabled)
         self.controller.text_ready_signal.connect(self._on_transcription_ready)
+        self.controller.result_ready_signal.connect(self._on_result_ready)
         self.controller.model_loaded_signal.connect(self._on_model_loaded_success)
         self.controller.error_occurred.connect(self._show_error_dialog)
         self.controller.transcription_cancelled_signal.connect(
@@ -484,6 +548,12 @@ class MainWindow(QMainWindow):
             self._on_model_loading_started
         )
 
+        self.controller.batch_progress.connect(self.file_panel.update_batch_progress)
+        self.controller.batch_completed.connect(self.file_panel.on_batch_completed)
+        self.controller.batch_completed.connect(self._on_batch_finished)
+        self.controller.batch_error.connect(self.file_panel.on_batch_error)
+        self.controller.batch_error.connect(self._on_batch_finished)
+
     def _build_ui(self) -> None:
         self.menuBar().setVisible(False)
 
@@ -492,9 +562,15 @@ class MainWindow(QMainWindow):
 
         root = QVBoxLayout(central)
         root.setContentsMargins(5, 5, 5, 5)
-        root.setSpacing(8)
+        root.setSpacing(4)
 
         root.addWidget(self._build_main_group(), 1)
+
+        # Metrics row
+        self.metrics_label = QLabel("")
+        self.metrics_label.setAlignment(Qt.AlignCenter)
+        self.metrics_label.setStyleSheet("color: #aaaaaa; font-size: 11px;")
+        root.addWidget(self.metrics_label)
 
         self.model_status_label = QLabel("No model loaded")
         self.model_status_label.setMinimumWidth(100)
@@ -519,7 +595,7 @@ class MainWindow(QMainWindow):
         self.statusBar().setSizeGripEnabled(True)
 
         self.resize(_DEFAULT_MAIN_WIDTH, _DEFAULT_MAIN_HEIGHT)
-        self.setMinimumSize(250, 160)
+        self.setMinimumSize(250, 190)
         self.setWindowFlag(Qt.WindowStaysOnTopHint)
 
     def _build_main_group(self) -> QGroupBox:
@@ -542,18 +618,18 @@ class MainWindow(QMainWindow):
         left_col.addWidget(self.settings_button)
 
         self.transcribe_file_button = QPushButton()
+        self.transcribe_file_button.setFlat(True)
         self.transcribe_file_button.setObjectName("fileButton")
         self.transcribe_file_button.setIcon(_create_file_icon())
         self.transcribe_file_button.setIconSize(QSize(28, 28))
         self.transcribe_file_button.setFixedSize(32, 32)
-        self.transcribe_file_button.setToolTip("Transcribe an audio file")
-        self.transcribe_file_button.clicked.connect(
-            self._select_and_transcribe_file
-        )
+        self.transcribe_file_button.setToolTip("Show File Panel")
+        self.transcribe_file_button.clicked.connect(self._toggle_file_panel)
         self._register_toggleable_widget(self.transcribe_file_button)
         left_col.addWidget(self.transcribe_file_button)
 
         self.clipboard_button = QPushButton()
+        self.clipboard_button.setFlat(True)
         self.clipboard_button.setIcon(_create_clipboard_icon())
         self.clipboard_button.setIconSize(QSize(28, 28))
         self.clipboard_button.setFixedSize(32, 32)
@@ -627,6 +703,24 @@ class MainWindow(QMainWindow):
         else:
             return f"{num_bytes / (1024 * 1024 * 1024):.2f} GB"
 
+    # --- Metrics ---
+
+    @Slot(object)
+    def _on_metrics_updated(self, metrics) -> None:
+        parts = [
+            f"CPU: {metrics.cpu_usage:.0f}%",
+            f"RAM: {metrics.ram_usage_percent:.0f}%",
+        ]
+        if metrics.gpu_utilization is not None:
+            parts.append(f"GPU: {metrics.gpu_utilization:.0f}%")
+        if metrics.vram_usage_percent is not None:
+            parts.append(f"VRAM: {metrics.vram_usage_percent:.0f}%")
+        if metrics.power_usage_percent is not None:
+            parts.append(f"Power: {metrics.power_usage_percent:.0f}%")
+        self.metrics_label.setText("  |  ".join(parts))
+
+    # --- Model download/loading ---
+
     @Slot(str, object)
     def _on_model_download_started(self, model_name: str, total_bytes: int) -> None:
         self._is_loading_model = True
@@ -671,6 +765,8 @@ class MainWindow(QMainWindow):
         self.cancel_download_button.setEnabled(False)
         self.controller.cancel_model_loading()
 
+    # --- Settings ---
+
     @Slot()
     def _open_settings_dialog(self) -> None:
         current_audio = {
@@ -692,11 +788,13 @@ class MainWindow(QMainWindow):
             current_task_mode=self.task_mode,
             current_audio_device=current_audio,
             current_whisper_settings=whisper_settings,
+            current_ext_checked=self.file_panel.get_ext_checked(),
         )
         dlg.model_update_requested.connect(self._on_settings_update_requested)
         dlg.audio_device_changed.connect(self._on_audio_device_changed)
         dlg.task_mode_changed.connect(self._on_task_mode_changed)
         dlg.whisper_settings_changed.connect(self._on_whisper_settings_changed)
+        dlg.file_types_changed.connect(self._on_file_types_changed)
         dlg.exec()
 
     @Slot(str, str, str)
@@ -749,6 +847,11 @@ class MainWindow(QMainWindow):
         self._update_clipboard_button_text()
         self._save_config("show_clipboard_window", False)
 
+    @Slot()
+    def _on_file_panel_closed(self) -> None:
+        self._file_panel_visible = False
+        self._update_file_panel_button_text()
+
     @Slot(bool)
     def _on_append_mode_changed(self, checked: bool) -> None:
         self._save_config("clipboard_append_mode", checked)
@@ -777,6 +880,9 @@ class MainWindow(QMainWindow):
             self._save_config(key, value)
         self.controller.set_whisper_params(settings)
 
+    def _on_file_types_changed(self, ext_checked: dict) -> None:
+        self.file_panel.set_ext_checked(ext_checked)
+
     @Slot(str, str, str)
     def _on_model_loaded_success(
         self, model_name: str, quant: str, device: str
@@ -794,9 +900,11 @@ class MainWindow(QMainWindow):
         self.cancel_download_button.setVisible(False)
         self.cancel_download_button.setEnabled(True)
 
+    # --- Recording ---
+
     @Slot()
     def _toggle_recording(self) -> None:
-        if self.controller.is_transcribing():
+        if self.controller.is_transcribing() or self.controller.is_batch_processing():
             return
 
         if not self.record_button.isEnabled():
@@ -840,6 +948,97 @@ class MainWindow(QMainWindow):
         except Exception:
             return False
 
+    # --- File panel transcription ---
+
+    @Slot(str, int, str, str, str)
+    def _on_file_panel_transcribe(self, file_path: str, batch_size: int,
+                                   output_mode: str, output_format: str,
+                                   output_dir: str) -> None:
+        self._pending_output_mode = output_mode
+        self._pending_output_format = output_format
+        self._pending_output_dir = output_dir
+        self._pending_source_file = file_path
+
+        logger.info(
+            f"Transcribing: {file_path} (batch={batch_size}, "
+            f"mode={output_mode}, fmt={output_format})"
+        )
+        self.record_button.setText("Transcribing...")
+        self.controller.transcribe_file(file_path, batch_size=batch_size)
+
+    @Slot(object)
+    def _on_result_ready(self, result) -> None:
+        output_mode = getattr(self, "_pending_output_mode", "clipboard")
+        output_format = getattr(self, "_pending_output_format", "txt")
+        output_dir = getattr(self, "_pending_output_dir", "")
+        source_file = getattr(self, "_pending_source_file", "")
+
+        if output_mode == "clipboard":
+            return
+
+        if not result.segments:
+            logger.warning("No segments available for file output")
+            return
+
+        source_path = Path(source_file) if source_file else result.source_file
+        if not source_path:
+            logger.warning("No source file path for file output")
+            return
+
+        out_suffix = f".{output_format}"
+        if output_mode == "save_to_custom" and output_dir:
+            out_dir = Path(output_dir)
+            out_dir.mkdir(parents=True, exist_ok=True)
+            output_file = out_dir / f"{source_path.stem}{out_suffix}"
+        else:
+            output_file = source_path.with_suffix(out_suffix)
+
+        try:
+            write_output(result, output_file, output_format)
+        except Exception as e:
+            logger.error(f"Failed to write output file: {e}")
+            QMessageBox.warning(
+                self, "Output Error", f"Failed to write output file:\n{e}"
+            )
+
+    # --- Batch processing ---
+
+    @Slot(list, str, str, int, str)
+    def _on_batch_start(self, files, fmt, output_dir, batch_size, task_mode) -> None:
+        whisper_params = {
+            "without_timestamps": config_manager.get_value("without_timestamps", True),
+            "word_timestamps": config_manager.get_value("word_timestamps", False),
+            "beam_size": config_manager.get_value("beam_size", 5),
+            "vad_filter": config_manager.get_value("vad_filter", True),
+            "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", False),
+        }
+        self.record_button.setText("Transcribing...")
+        self.record_button.set_state(WaveformButton.TRANSCRIBING)
+        self.record_button.setEnabled(False)
+        self.controller.start_batch_processing(
+            files=files,
+            output_format=fmt,
+            output_directory=output_dir if output_dir else None,
+            batch_size=batch_size,
+            task_mode=task_mode,
+            whisper_params=whisper_params,
+        )
+
+    @Slot()
+    def _on_batch_stop(self) -> None:
+        self.controller.stop_batch_processing()
+        self.record_button.setText("Click to Record")
+        self.record_button.set_state(WaveformButton.IDLE)
+        self.record_button.setEnabled(True)
+
+    @Slot(str)
+    def _on_batch_finished(self, message: str) -> None:
+        self.record_button.setText("Click to Record")
+        self.record_button.set_state(WaveformButton.IDLE)
+        self.record_button.setEnabled(True)
+
+    # --- Drag and drop ---
+
     def _transcribe_specific_file(self, file_path: str) -> None:
         if not file_path or not self._is_supported_audio_file(file_path):
             QMessageBox.warning(
@@ -847,26 +1046,15 @@ class MainWindow(QMainWindow):
             )
             return
 
-        if not self.transcribe_file_button.isEnabled():
-            return
+        self._pending_output_mode = "clipboard"
+        self._pending_output_format = "txt"
+        self._pending_output_dir = ""
+        self._pending_source_file = file_path
 
-        dlg = BatchSizeDialog(self, default_value=16)
-        if dlg.exec() == QDialog.Accepted:
-            logger.info(
-                f"Transcribing: {file_path} (batch={dlg.batch_size()})"
-            )
-            self.controller.transcribe_file(
-                file_path, batch_size=dlg.batch_size()
-            )
+        logger.info(f"Transcribing dropped file: {file_path}")
+        self.controller.transcribe_file(file_path, batch_size=None)
 
-    @Slot()
-    def _select_and_transcribe_file(self) -> None:
-        exts = " ".join(f"*{ext}" for ext in SUPPORTED_AUDIO_EXTENSIONS)
-        path, _ = QFileDialog.getOpenFileName(
-            self, "Select Audio File", "", f"Audio Files ({exts});;All Files (*)"
-        )
-        if path:
-            self._transcribe_specific_file(path)
+    # --- Clipboard toggle ---
 
     @Slot()
     def _toggle_clipboard(self) -> None:
@@ -889,6 +1077,28 @@ class MainWindow(QMainWindow):
             "Hide Clipboard" if self._clipboard_visible else "Show Clipboard"
         )
 
+    # --- File panel toggle ---
+
+    @Slot()
+    def _toggle_file_panel(self) -> None:
+        self._file_panel_visible = not self._file_panel_visible
+        self._update_file_panel_button_text()
+
+        host_rect = self._host_rect_global()
+        if self._file_panel_visible:
+            if self.file_panel.is_docked():
+                self.file_panel.show_docked(host_rect, gap=_DOCK_GAP)
+            else:
+                self.file_panel.show()
+                self.file_panel.raise_()
+        else:
+            self.file_panel.hide_animated(host_rect, gap=_DOCK_GAP)
+
+    def _update_file_panel_button_text(self) -> None:
+        self.transcribe_file_button.setToolTip(
+            "Hide File Panel" if self._file_panel_visible else "Show File Panel"
+        )
+
     def _register_toggleable_widget(self, widget: QWidget) -> None:
         self._toggleable_widgets.append(widget)
 
@@ -896,19 +1106,24 @@ class MainWindow(QMainWindow):
     def _on_transcription_ready(self, text: str) -> None:
         self.record_button.set_state(WaveformButton.IDLE)
 
-        self.clipboard_window.add_transcription(text)
+        output_mode = getattr(self, "_pending_output_mode", "clipboard")
 
-        if app := QApplication.instance():
-            clip_text = (
-                self.clipboard_window.get_full_text()
-                if self.clipboard_window.is_append_mode()
-                else text
-            )
-            app.clipboard().setText(clip_text)
+        if output_mode in ("clipboard", "save_and_clipboard"):
+            self.clipboard_window.add_transcription(text)
+
+            if app := QApplication.instance():
+                clip_text = (
+                    self.clipboard_window.get_full_text()
+                    if self.clipboard_window.is_append_mode()
+                    else text
+                )
+                app.clipboard().setText(clip_text)
 
         if self.is_recording:
             self.is_recording = False
             update_button_property(self.record_button, "recording", False)
+
+        self.file_panel.on_single_file_done()
 
     @Slot(bool)
     def set_widgets_enabled(self, enabled: bool) -> None:
@@ -957,8 +1172,9 @@ class MainWindow(QMainWindow):
                 return True
         return super().eventFilter(obj, event)
 
-    def _sync_clipboard_position(self) -> None:
+    def _sync_side_windows(self) -> None:
         host_rect = self._host_rect_global()
+
         self.clipboard_window.update_host_rect(host_rect)
         if (
             self.clipboard_window.isVisible()
@@ -966,13 +1182,20 @@ class MainWindow(QMainWindow):
         ):
             self.clipboard_window.reposition_to_host(host_rect, gap=_DOCK_GAP)
 
+        self.file_panel.update_host_rect(host_rect)
+        if (
+            self.file_panel.isVisible()
+            and self.file_panel.is_docked()
+        ):
+            self.file_panel.reposition_to_host(host_rect, gap=_DOCK_GAP)
+
     def moveEvent(self, event):
         super().moveEvent(event)
-        self._sync_clipboard_position()
+        self._sync_side_windows()
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self._sync_clipboard_position()
+        self._sync_side_windows()
 
     def closeEvent(self, event):
         import time as _time
@@ -982,6 +1205,10 @@ class MainWindow(QMainWindow):
         self._sample_timer.stop()
         self.record_button.stop()
         logger.info(f"[SHUTDOWN] timers stopped: {_time.perf_counter() - _t0:.3f}s")
+
+        _t1 = _time.perf_counter()
+        self._metrics_collector.stop()
+        logger.info(f"[SHUTDOWN] metrics_collector.stop(): {_time.perf_counter() - _t1:.3f}s")
 
         if hasattr(self, "global_hotkey"):
             _t1 = _time.perf_counter()
@@ -1005,7 +1232,8 @@ class MainWindow(QMainWindow):
 
         _t1 = _time.perf_counter()
         self.clipboard_window.close()
-        logger.info(f"[SHUTDOWN] clipboard_window.close(): {_time.perf_counter() - _t1:.3f}s")
+        self.file_panel.close()
+        logger.info(f"[SHUTDOWN] side windows close: {_time.perf_counter() - _t1:.3f}s")
 
         _t1 = _time.perf_counter()
         self.controller.stop_all_threads()

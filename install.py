@@ -9,6 +9,7 @@ _gpu_packages = [
     "nvidia-cuda-runtime-cu12==12.8.90",
     "nvidia-cublas-cu12==12.8.4.1",
     "nvidia-cudnn-cu12==9.10.2.21",
+    "nvidia-ml-py",
 ]
 
 _supported_python_versions = {"cp311", "cp312", "cp313"}
