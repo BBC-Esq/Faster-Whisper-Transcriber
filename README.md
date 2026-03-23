@@ -4,7 +4,7 @@
 
 ### Reliably transcribe your voice or an audio file on CPU or GPU!
 
-<img width="659" height="190" alt="image" src="https://github.com/user-attachments/assets/093ea17b-6d9b-470c-9c95-b7334f7e93b2" />
+<img width="1090" height="220" alt="image" src="https://github.com/user-attachments/assets/76908cd1-954c-4752-94a4-6423ec610b1e" />
 
 <br>
 </div>
