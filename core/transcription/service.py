@@ -3,9 +3,11 @@ from __future__ import annotations
 import threading
 from pathlib import Path
 
+import numpy as np
 from faster_whisper import BatchedInferencePipeline
 from PySide6.QtCore import QObject, Signal, QRunnable, QThreadPool
 
+from core.audio.wav_for_whisper import try_load_wav_for_faster_whisper
 from core.temp_file_manager import temp_file_manager
 from core.text.curation import curate_text
 from core.output.writers import SegmentData, TranscriptionResult
@@ -65,6 +67,13 @@ class _TranscriptionRunnable(QRunnable):
 
             logger.info(f"Starting transcription: {self.audio_file}")
 
+            whisper_sr = self.model.feature_extractor.sampling_rate
+            audio_input: str | np.ndarray = try_load_wav_for_faster_whisper(
+                self.audio_file, target_sr=whisper_sr
+            )
+            if audio_input is None:
+                audio_input = str(self.audio_file)
+
             extra_kwargs = {
                 "without_timestamps": self.whisper_params.get("without_timestamps", True),
                 "word_timestamps": self.whisper_params.get("word_timestamps", False),
@@ -76,7 +85,7 @@ class _TranscriptionRunnable(QRunnable):
             if self.batch_size is not None and int(self.batch_size) > 1:
                 batched_model = BatchedInferencePipeline(model=self.model)
                 segments, info = batched_model.transcribe(
-                    str(self.audio_file),
+                    audio_input,
                     language=None,
                     task=self.task_mode,
                     batch_size=int(self.batch_size),
@@ -84,7 +93,7 @@ class _TranscriptionRunnable(QRunnable):
                 )
             else:
                 segments, info = self.model.transcribe(
-                    str(self.audio_file),
+                    audio_input,
                     language=None,
                     task=self.task_mode,
                     **extra_kwargs,
