@@ -15,7 +15,7 @@ _gpu_packages = [
 _supported_python_versions = {"cp311", "cp312", "cp313"}
 
 libs = [
-    "ctranslate2==4.6.2",
+    "ctranslate2==4.7.1",
     "faster-whisper==1.2.1",
     "nltk", # required by my program
     "psutil", # required by my program
