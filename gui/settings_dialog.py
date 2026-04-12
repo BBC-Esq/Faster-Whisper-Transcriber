@@ -136,17 +136,11 @@ class SettingsDialog(QDialog):
         whisper_form.setHorizontalSpacing(12)
         whisper_form.setVerticalSpacing(10)
 
-        self.without_timestamps_cb = QCheckBox()
-        self.without_timestamps_cb.setToolTip(
-            "Skip timestamp generation for faster output"
+        self.include_timestamps_cb = QCheckBox()
+        self.include_timestamps_cb.setToolTip(
+            "Include segment timestamps in output (always enabled for SRT/VTT)"
         )
-        whisper_form.addRow("Without Timestamps", self.without_timestamps_cb)
-
-        self.word_timestamps_cb = QCheckBox()
-        self.word_timestamps_cb.setToolTip(
-            "Extract start/end time for each individual word"
-        )
-        whisper_form.addRow("Word Timestamps", self.word_timestamps_cb)
+        whisper_form.addRow("Include Timestamps", self.include_timestamps_cb)
 
         self.beam_size_spin = QSpinBox()
         self.beam_size_spin.setRange(1, 20)
@@ -212,8 +206,7 @@ class SettingsDialog(QDialog):
         self.quantization_dropdown.currentTextChanged.connect(self._check_for_changes)
         self.task_dropdown.currentTextChanged.connect(self._check_for_changes)
         self.audio_device_dropdown.currentIndexChanged.connect(self._check_for_changes)
-        self.without_timestamps_cb.toggled.connect(self._check_for_changes)
-        self.word_timestamps_cb.toggled.connect(self._check_for_changes)
+        self.include_timestamps_cb.toggled.connect(self._check_for_changes)
         self.beam_size_spin.valueChanged.connect(self._check_for_changes)
         self.vad_filter_cb.toggled.connect(self._check_for_changes)
         self.condition_on_previous_cb.toggled.connect(self._check_for_changes)
@@ -229,11 +222,8 @@ class SettingsDialog(QDialog):
         self.task_dropdown.setCurrentText(self.current_task_mode)
         self._select_audio_device()
 
-        self.without_timestamps_cb.setChecked(
-            self.current_whisper_settings.get("without_timestamps", True)
-        )
-        self.word_timestamps_cb.setChecked(
-            self.current_whisper_settings.get("word_timestamps", False)
+        self.include_timestamps_cb.setChecked(
+            self.current_whisper_settings.get("include_timestamps", False)
         )
         self.beam_size_spin.setValue(
             self.current_whisper_settings.get("beam_size", 5)
@@ -324,8 +314,7 @@ class SettingsDialog(QDialog):
 
     def _whisper_settings_selection_changed(self) -> bool:
         current = {
-            "without_timestamps": self.without_timestamps_cb.isChecked(),
-            "word_timestamps": self.word_timestamps_cb.isChecked(),
+            "include_timestamps": self.include_timestamps_cb.isChecked(),
             "beam_size": self.beam_size_spin.value(),
             "vad_filter": self.vad_filter_cb.isChecked(),
             "condition_on_previous_text": self.condition_on_previous_cb.isChecked(),
@@ -370,8 +359,7 @@ class SettingsDialog(QDialog):
 
         if self._whisper_settings_selection_changed():
             settings = {
-                "without_timestamps": self.without_timestamps_cb.isChecked(),
-                "word_timestamps": self.word_timestamps_cb.isChecked(),
+                "include_timestamps": self.include_timestamps_cb.isChecked(),
                 "beam_size": self.beam_size_spin.value(),
                 "vad_filter": self.vad_filter_cb.isChecked(),
                 "condition_on_previous_text": self.condition_on_previous_cb.isChecked(),

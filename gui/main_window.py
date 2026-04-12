@@ -774,8 +774,7 @@ class MainWindow(QMainWindow):
             "hostapi": self.settings.value(SETTINGS_AUDIO_DEVICE_HOSTAPI, ""),
         }
         whisper_settings = {
-            "without_timestamps": config_manager.get_value("without_timestamps", False),
-            "word_timestamps": config_manager.get_value("word_timestamps", False),
+            "include_timestamps": config_manager.get_value("include_timestamps", False),
             "beam_size": config_manager.get_value("beam_size", 5),
             "vad_filter": config_manager.get_value("vad_filter", False),
             "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", True),
@@ -879,7 +878,15 @@ class MainWindow(QMainWindow):
     def _on_whisper_settings_changed(self, settings: dict) -> None:
         for key, value in settings.items():
             self._save_config(key, value)
-        self.controller.set_whisper_params(settings)
+        # Translate include_timestamps to the params the transcription service expects
+        whisper_params = {
+            "without_timestamps": not settings.get("include_timestamps", False),
+            "word_timestamps": False,
+            "beam_size": settings.get("beam_size", 5),
+            "vad_filter": settings.get("vad_filter", False),
+            "condition_on_previous_text": settings.get("condition_on_previous_text", True),
+        }
+        self.controller.set_whisper_params(whisper_params)
 
     def _on_file_types_changed(self, ext_checked: dict) -> None:
         self.file_panel.set_ext_checked(ext_checked)
@@ -960,6 +967,12 @@ class MainWindow(QMainWindow):
         self._pending_output_dir = output_dir
         self._pending_source_file = file_path
 
+        # Force timestamps on for formats that require them
+        if output_format in ("srt", "vtt"):
+            self.controller.transcription_service.set_timestamps_override(False)
+        else:
+            self.controller.transcription_service.set_timestamps_override(None)
+
         logger.info(
             f"Transcribing: {file_path} (batch={batch_size}, "
             f"mode={output_mode}, fmt={output_format})"
@@ -1006,12 +1019,16 @@ class MainWindow(QMainWindow):
 
     @Slot(list, str, str, int, str)
     def _on_batch_start(self, files, fmt, output_dir, batch_size, task_mode) -> None:
+        include_timestamps = config_manager.get_value("include_timestamps", False)
+        # Force timestamps on for formats that require them
+        if fmt in ("srt", "vtt"):
+            include_timestamps = True
         whisper_params = {
-            "without_timestamps": config_manager.get_value("without_timestamps", True),
-            "word_timestamps": config_manager.get_value("word_timestamps", False),
+            "without_timestamps": not include_timestamps,
+            "word_timestamps": False,
             "beam_size": config_manager.get_value("beam_size", 5),
-            "vad_filter": config_manager.get_value("vad_filter", True),
-            "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", False),
+            "vad_filter": config_manager.get_value("vad_filter", False),
+            "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", True),
         }
         self.record_button.setText("Transcribing...")
         self.record_button.set_state(WaveformButton.TRANSCRIBING)

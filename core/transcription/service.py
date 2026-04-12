@@ -84,16 +84,18 @@ class _TranscriptionRunnable(QRunnable):
 
             if self.batch_size is not None and int(self.batch_size) > 1:
                 # BatchedInferencePipeline requires VAD or clip_timestamps to
-                # split audio into chunks.  When the user has VAD disabled, use
-                # a very low threshold so virtually all audio is treated as
-                # speech while still providing the timestamps the pipeline needs.
-                if not extra_kwargs.get("vad_filter"):
-                    extra_kwargs["vad_filter"] = True
-                    extra_kwargs["vad_parameters"] = dict(threshold=0.001)
-                    logger.info(
-                        "Batched pipeline requires VAD; enabling with "
-                        "low threshold (0.001) to preserve full audio coverage"
-                    )
+                # split audio into chunks.  Always apply tuned VAD parameters
+                # that maximize audio coverage while avoiding hallucinations
+                # on near-silent segments.
+                extra_kwargs["vad_filter"] = True
+                extra_kwargs["vad_parameters"] = dict(
+                    threshold=0.0008,
+                    neg_threshold=0.0001,
+                    min_speech_duration_ms=500,
+                    max_speech_duration_s=30,
+                    min_silence_duration_ms=1000,
+                    speech_pad_ms=500,
+                )
 
                 batched_model = BatchedInferencePipeline(model=self.model)
                 segments, info = batched_model.transcribe(
@@ -182,6 +184,7 @@ class TranscriptionService(QObject):
         self._cancel_event: threading.Event | None = None
         self._is_transcribing = False
         self._whisper_params: dict = {}
+        self._timestamps_override: bool | None = None
 
     def set_model_version_provider(self, func) -> None:
         self._get_model_version_func = func
@@ -189,6 +192,9 @@ class TranscriptionService(QObject):
     def set_whisper_params(self, params: dict) -> None:
         self._whisper_params = dict(params)
         logger.debug(f"Whisper params updated: {self._whisper_params}")
+
+    def set_timestamps_override(self, without_timestamps: bool | None) -> None:
+        self._timestamps_override = without_timestamps
 
     def is_transcribing(self) -> bool:
         return self._is_transcribing
@@ -220,6 +226,11 @@ class TranscriptionService(QObject):
             self._cancel_event = threading.Event()
             self._is_transcribing = True
 
+            params = dict(self._whisper_params)
+            if self._timestamps_override is not None:
+                params["without_timestamps"] = self._timestamps_override
+            self._timestamps_override = None
+
             runnable = _TranscriptionRunnable(
                 model=model,
                 model_version=model_version,
@@ -229,7 +240,7 @@ class TranscriptionService(QObject):
                 batch_size=batch_size,
                 get_current_version_func=self._get_model_version_func,
                 cancel_event=self._cancel_event,
-                whisper_params=self._whisper_params,
+                whisper_params=params,
             )
             runnable.signals.transcription_done.connect(self._on_transcription_done)
             runnable.signals.transcription_done_with_result.connect(

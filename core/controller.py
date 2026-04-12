@@ -70,9 +70,10 @@ class TranscriberController(QObject):
         return version
 
     def _load_whisper_params(self) -> None:
+        include_timestamps = config_manager.get_value("include_timestamps", False)
         params = {
-            "without_timestamps": config_manager.get_value("without_timestamps", False),
-            "word_timestamps": config_manager.get_value("word_timestamps", False),
+            "without_timestamps": not include_timestamps,
+            "word_timestamps": False,
             "beam_size": config_manager.get_value("beam_size", 5),
             "vad_filter": config_manager.get_value("vad_filter", False),
             "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", True),
