@@ -83,6 +83,18 @@ class _TranscriptionRunnable(QRunnable):
             }
 
             if self.batch_size is not None and int(self.batch_size) > 1:
+                # BatchedInferencePipeline requires VAD or clip_timestamps to
+                # split audio into chunks.  When the user has VAD disabled, use
+                # a very low threshold so virtually all audio is treated as
+                # speech while still providing the timestamps the pipeline needs.
+                if not extra_kwargs.get("vad_filter"):
+                    extra_kwargs["vad_filter"] = True
+                    extra_kwargs["vad_parameters"] = dict(threshold=0.001)
+                    logger.info(
+                        "Batched pipeline requires VAD; enabling with "
+                        "low threshold (0.001) to preserve full audio coverage"
+                    )
+
                 batched_model = BatchedInferencePipeline(model=self.model)
                 segments, info = batched_model.transcribe(
                     audio_input,

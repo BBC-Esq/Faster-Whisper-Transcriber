@@ -864,6 +864,7 @@ class MainWindow(QMainWindow):
         self.cancel_download_button.setVisible(False)
         self.cancel_download_button.setEnabled(True)
         self._show_current_model_status()
+        self.file_panel.on_single_file_done()
         if "model" in title.lower():
             QMessageBox.critical(self, title, message)
         else:
