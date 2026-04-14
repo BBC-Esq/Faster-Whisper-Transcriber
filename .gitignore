@@ -29,6 +29,10 @@ backup/
 
 # Test files
 TEST FILES/
+tests/
+
+# Development (local research, benchmarks, analysis)
+DEVELOPMENT/
 
 # Tools (embedded Python, uv)
 tools/
