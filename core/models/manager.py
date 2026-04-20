@@ -272,6 +272,51 @@ class ModelManager(QObject):
         with QMutexLocker(self._model_mutex):
             return self._model, self._model_version
 
+    def get_or_load_model_sync(
+        self, model_name: str, quantization: str, device: str
+    ):
+        """Synchronous variant used by the server API when it needs the current
+        model immediately. Returns the cached model if settings match; otherwise
+        blocks on a fresh load via the thread pool."""
+        model, _ = self.get_model()
+        if model is not None and self._current_settings == {
+            "model_name": model_name,
+            "quantization_type": quantization,
+            "device_type": device,
+        }:
+            return model
+
+        import threading as _threading
+        version = str(uuid.uuid4())
+        cancel_event = _threading.Event()
+        runnable = _ModelLoaderRunnable(
+            model_name, quantization, device, version, cancel_event
+        )
+        holder: dict = {}
+        done_event = _threading.Event()
+
+        def _on_loaded(m, *_args):
+            holder["model"] = m
+            done_event.set()
+
+        def _on_error(err, _v):
+            holder["error"] = err
+            done_event.set()
+
+        def _on_cancelled(_v):
+            holder["error"] = "cancelled"
+            done_event.set()
+
+        runnable.signals.model_loaded.connect(_on_loaded)
+        runnable.signals.error_occurred.connect(_on_error)
+        runnable.signals.download_cancelled.connect(_on_cancelled)
+        self._thread_pool.start(runnable)
+
+        done_event.wait()
+        if "error" in holder:
+            raise ModelLoadError(holder["error"])
+        return holder.get("model")
+
     def _on_download_started(
         self, model_name: str, total_bytes: int, version: str
     ) -> None:

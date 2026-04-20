@@ -31,7 +31,9 @@ from core.audio.device_utils import find_device_id_by_name
 from core.hotkeys import GlobalHotkey
 from core.output.writers import write_output
 from core.monitoring.collectors import MetricsCollector
+from core.server.server_manager import ServerManager
 from config.manager import config_manager
+from config.server_settings import TranscriptionSettings as ServerTranscriptionSettings
 from gui.styles import update_button_property
 from gui.clipboard_window import ClipboardSideWindow
 from gui.file_panel import FilePanelWindow
@@ -175,6 +177,7 @@ class MainWindow(QMainWindow):
         self.task_mode = config_manager.get_value("task_mode", "transcribe")
         audio_device_id = self._resolve_audio_device()
         self.controller = TranscriberController(audio_device_id=audio_device_id)
+        self.server_manager = ServerManager(self)
         self.supported_quantizations: dict[str, list[str]] = {"cpu": [], "cuda": []}
         self.is_recording = False
         self.cuda_available = cuda_available
@@ -184,6 +187,8 @@ class MainWindow(QMainWindow):
         self._model_is_loaded = False
         self._is_loading_model = False
         self._download_total_bytes = 0
+        self._server_mode_enabled = bool(config_manager.get_value("server_mode_enabled", False))
+        self._server_port = int(config_manager.get_value("server_port", 8765))
 
         self.clipboard_window = ClipboardSideWindow(None, width=_DEFAULT_CLIPBOARD_WIDTH)
         self.clipboard_window.user_closed.connect(self._on_clipboard_closed)
@@ -208,6 +213,10 @@ class MainWindow(QMainWindow):
         self._metrics_collector = MetricsCollector(interval_ms=1000)
         self._metrics_collector.metrics_updated.connect(self._on_metrics_updated)
 
+        self.server_manager.server_started.connect(self._on_server_started)
+        self.server_manager.server_stopped.connect(self._on_server_stopped)
+        self.server_manager.server_error.connect(self._on_server_error)
+
         self._build_ui()
         self._setup_connections()
 
@@ -230,6 +239,9 @@ class MainWindow(QMainWindow):
             app.installEventFilter(self)
 
         self._metrics_collector.start()
+
+        if self._server_mode_enabled:
+            self._start_server_mode(self._server_port)
 
         logger.info("MainWindow initialized")
 
@@ -688,7 +700,11 @@ class MainWindow(QMainWindow):
             name = self.loaded_model_settings.get("model_name", "")
             quant = self.loaded_model_settings.get("quantization_type", "")
             device = self.loaded_model_settings.get("device_type", "")
-            self._update_model_status(f"{name} ({quant} / {device})")
+            server_bit = (
+                f"  |  server: on ({self._server_port})"
+                if self._server_mode_enabled else ""
+            )
+            self._update_model_status(f"{name} ({quant} / {device}){server_bit}")
         else:
             self._update_model_status("No model loaded")
 
@@ -767,6 +783,13 @@ class MainWindow(QMainWindow):
 
     # --- Settings ---
 
+    def _is_busy(self) -> bool:
+        return (
+            self.controller.is_transcribing()
+            or self.controller.is_batch_processing()
+            or self.server_manager.is_transcription_active()
+        )
+
     @Slot()
     def _open_settings_dialog(self) -> None:
         current_audio = {
@@ -779,6 +802,10 @@ class MainWindow(QMainWindow):
             "vad_filter": config_manager.get_value("vad_filter", False),
             "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", True),
         }
+        server_settings = {
+            "server_mode_enabled": self._server_mode_enabled,
+            "server_port": self._server_port,
+        }
         dlg = SettingsDialog(
             parent=self,
             cuda_available=self.cuda_available,
@@ -788,12 +815,15 @@ class MainWindow(QMainWindow):
             current_audio_device=current_audio,
             current_whisper_settings=whisper_settings,
             current_ext_checked=self.file_panel.get_ext_checked(),
+            current_server_settings=server_settings,
+            is_busy_check=self._is_busy,
         )
         dlg.model_update_requested.connect(self._on_settings_update_requested)
         dlg.audio_device_changed.connect(self._on_audio_device_changed)
         dlg.task_mode_changed.connect(self._on_task_mode_changed)
         dlg.whisper_settings_changed.connect(self._on_whisper_settings_changed)
         dlg.file_types_changed.connect(self._on_file_types_changed)
+        dlg.server_mode_changed.connect(self._on_server_mode_changed)
         dlg.exec()
 
     @Slot(str, str, str)
@@ -891,6 +921,63 @@ class MainWindow(QMainWindow):
     def _on_file_types_changed(self, ext_checked: dict) -> None:
         self.file_panel.set_ext_checked(ext_checked)
 
+    @Slot(bool, int)
+    def _on_server_mode_changed(self, enabled: bool, port: int) -> None:
+        self._server_mode_enabled = enabled
+        self._server_port = int(port)
+        self._save_config("server_mode_enabled", enabled)
+        self._save_config("server_port", self._server_port)
+
+        if enabled:
+            self._start_server_mode(self._server_port)
+        else:
+            self.server_manager.stop_server()
+
+    def _start_server_mode(self, port: int) -> None:
+        model_name = self.loaded_model_settings.get("model_name", self.DEFAULTS["model"])
+        quantization = self.loaded_model_settings.get(
+            "quantization_type", self.DEFAULTS["quantization"]
+        )
+        model_key = f"{model_name} - {quantization}"
+        default_settings = ServerTranscriptionSettings(
+            model_key=model_key,
+            device=self.loaded_model_settings.get("device_type", "cpu"),
+            task_mode=self.task_mode,
+            language=None,
+            output_format=config_manager.get_value("output_format", "txt"),
+            include_timestamps=bool(
+                config_manager.get_value("include_timestamps", False)
+            ),
+            word_timestamps=bool(config_manager.get_value("word_timestamps", False)),
+            beam_size=int(config_manager.get_value("beam_size", 5)),
+            vad_filter=bool(config_manager.get_value("vad_filter", True)),
+            condition_on_previous_text=bool(
+                config_manager.get_value("condition_on_previous_text", False)
+            ),
+            batch_size=1,
+        )
+        self.server_manager.start_server(
+            port, self.controller.model_manager, default_settings
+        )
+
+    @Slot(int)
+    def _on_server_started(self, port: int) -> None:
+        logger.info(f"Server started on port {port}")
+        self._show_current_model_status()
+
+    @Slot()
+    def _on_server_stopped(self) -> None:
+        logger.info("Server stopped")
+        self._show_current_model_status()
+
+    @Slot(str)
+    def _on_server_error(self, message: str) -> None:
+        logger.error(f"Server error: {message}")
+        self._server_mode_enabled = False
+        self._save_config("server_mode_enabled", False)
+        self._show_current_model_status()
+        QMessageBox.warning(self, "Server Error", message)
+
     @Slot(str, str, str)
     def _on_model_loaded_success(
         self, model_name: str, quant: str, device: str
@@ -912,6 +999,9 @@ class MainWindow(QMainWindow):
 
     @Slot()
     def _toggle_recording(self) -> None:
+        if self._server_mode_enabled:
+            return
+
         if self.controller.is_transcribing() or self.controller.is_batch_processing():
             return
 
@@ -1223,6 +1313,10 @@ class MainWindow(QMainWindow):
         self._sample_timer.stop()
         self.record_button.stop()
         logger.info(f"[SHUTDOWN] timers stopped: {_time.perf_counter() - _t0:.3f}s")
+
+        _t1 = _time.perf_counter()
+        self.server_manager.cleanup()
+        logger.info(f"[SHUTDOWN] server_manager.cleanup(): {_time.perf_counter() - _t1:.3f}s")
 
         _t1 = _time.perf_counter()
         self._metrics_collector.stop()

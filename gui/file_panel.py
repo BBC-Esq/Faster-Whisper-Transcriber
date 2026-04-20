@@ -21,7 +21,7 @@ SUPPORTED_AUDIO_EXTENSIONS = [
     ".mkv", ".mp3", ".mp4", ".ogg", ".wav", ".webm", ".wma",
 ]
 
-OUTPUT_FORMATS = ["txt", "srt", "vtt", "tsv", "json"]
+OUTPUT_FORMATS = ["txt", "srt", "vtt", "json"]
 
 OUTPUT_MODES = [
     ("Clipboard only", "clipboard"),

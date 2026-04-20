@@ -61,15 +61,6 @@ def write_vtt(segments: list[SegmentData], output_file: Path) -> None:
             f.write(f"{segment.text.strip()}\n\n")
 
 
-def write_tsv(segments: list[SegmentData], output_file: Path) -> None:
-    with open(output_file, "w", encoding="utf-8") as f:
-        f.write("start\tend\ttext\n")
-        for segment in segments:
-            f.write(
-                f"{segment.start:.3f}\t{segment.end:.3f}\t{segment.text.strip()}\n"
-            )
-
-
 def write_json(result: TranscriptionResult, output_file: Path) -> None:
     output = {
         "language": result.language,
@@ -94,7 +85,6 @@ def write_output(
         "txt": lambda: write_txt(result.segments, output_file),
         "srt": lambda: write_srt(result.segments, output_file),
         "vtt": lambda: write_vtt(result.segments, output_file),
-        "tsv": lambda: write_tsv(result.segments, output_file),
         "json": lambda: write_json(result, output_file),
     }
     writer = writers.get(fmt)

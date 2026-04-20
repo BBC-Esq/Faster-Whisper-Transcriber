@@ -11,13 +11,14 @@ from PySide6.QtWidgets import (
     QWidget,
     QGroupBox,
     QCheckBox,
+    QLabel,
     QSpinBox,
 )
 
 from core.models.metadata import ModelMetadata
 from core.audio.device_utils import get_input_devices
 from gui.styles import update_button_property
-from gui.file_panel import FileTypesDialog, SUPPORTED_AUDIO_EXTENSIONS
+from gui.file_panel import FileTypesDialog, SUPPORTED_AUDIO_EXTENSIONS, ToggleSwitch
 from core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -28,6 +29,7 @@ class SettingsDialog(QDialog):
     audio_device_changed = Signal(str, str)
     task_mode_changed = Signal(str)
     whisper_settings_changed = Signal(object)
+    server_mode_changed = Signal(bool, int)
 
     file_types_changed = Signal(object)
 
@@ -41,6 +43,8 @@ class SettingsDialog(QDialog):
         current_audio_device: dict[str, str] | None = None,
         current_whisper_settings: dict | None = None,
         current_ext_checked: dict[str, bool] | None = None,
+        current_server_settings: dict | None = None,
+        is_busy_check=None,
     ):
         super().__init__(parent)
         self.setWindowTitle("Settings")
@@ -60,6 +64,11 @@ class SettingsDialog(QDialog):
             "vad_filter": True,
             "condition_on_previous_text": False,
         }
+        self.current_server_settings = current_server_settings or {
+            "server_mode_enabled": False,
+            "server_port": 8765,
+        }
+        self._is_busy_check = is_busy_check or (lambda: False)
         self._ext_checked = current_ext_checked or {
             ext: True for ext in SUPPORTED_AUDIO_EXTENSIONS
         }
@@ -163,6 +172,43 @@ class SettingsDialog(QDialog):
 
         right_column.addWidget(whisper_group)
 
+        server_group = QGroupBox("Server Mode")
+        server_vbox = QVBoxLayout(server_group)
+        server_vbox.setContentsMargins(12, 10, 12, 10)
+        server_vbox.setSpacing(8)
+
+        toggle_row = QHBoxLayout()
+        toggle_row.setSpacing(6)
+        self._server_off_label = QLabel("Off")
+        self._server_off_label.setStyleSheet("font-size: 11px;")
+        toggle_row.addWidget(self._server_off_label)
+        self.server_mode_toggle = ToggleSwitch()
+        toggle_row.addWidget(self.server_mode_toggle)
+        self._server_on_label = QLabel("On")
+        self._server_on_label.setStyleSheet("font-size: 11px;")
+        toggle_row.addWidget(self._server_on_label)
+        toggle_row.addSpacing(16)
+        toggle_row.addWidget(QLabel("Port:"))
+        self.server_port_spin = QSpinBox()
+        self.server_port_spin.setRange(1024, 65535)
+        self.server_port_spin.setToolTip(
+            "TCP port for the HTTP API (default 8765)."
+        )
+        toggle_row.addWidget(self.server_port_spin)
+        toggle_row.addStretch(1)
+        server_vbox.addLayout(toggle_row)
+
+        server_hint = QLabel(
+            "<qt>When On, an HTTP API is exposed at <code>http://0.0.0.0:&lt;port&gt;</code>. "
+            "Endpoints: <code>/transcribe</code>, <code>/transcribe/raw</code>, "
+            "<code>/models</code>, <code>/status</code>, <code>/health</code>.</qt>"
+        )
+        server_hint.setWordWrap(True)
+        server_hint.setStyleSheet("color: #aaaaaa; font-size: 11px;")
+        server_vbox.addWidget(server_hint)
+
+        right_column.addWidget(server_group)
+
         file_types_row = QHBoxLayout()
         file_types_row.addStretch(1)
         self._file_types_btn = QPushButton("File Types...")
@@ -210,6 +256,8 @@ class SettingsDialog(QDialog):
         self.beam_size_spin.valueChanged.connect(self._check_for_changes)
         self.vad_filter_cb.toggled.connect(self._check_for_changes)
         self.condition_on_previous_cb.toggled.connect(self._check_for_changes)
+        self.server_mode_toggle.toggled.connect(self._check_for_changes)
+        self.server_port_spin.valueChanged.connect(self._check_for_changes)
 
     def _populate_from_settings(self) -> None:
         self.model_dropdown.setCurrentText(self.current_settings.get("model_name", "base.en"))
@@ -234,6 +282,18 @@ class SettingsDialog(QDialog):
         self.condition_on_previous_cb.setChecked(
             self.current_whisper_settings.get("condition_on_previous_text", False)
         )
+
+        self.server_mode_toggle.blockSignals(True)
+        self.server_mode_toggle.setChecked(
+            bool(self.current_server_settings.get("server_mode_enabled", False))
+        )
+        self.server_mode_toggle.blockSignals(False)
+        self.server_port_spin.blockSignals(True)
+        self.server_port_spin.setValue(
+            int(self.current_server_settings.get("server_port", 8765))
+        )
+        self.server_port_spin.blockSignals(False)
+        self._apply_server_mode_lock()
 
     def _select_audio_device(self) -> None:
         saved_name = self.current_audio_device.get("name", "")
@@ -321,12 +381,39 @@ class SettingsDialog(QDialog):
         }
         return current != self.current_whisper_settings
 
+    def _server_settings_selection_changed(self) -> bool:
+        current = {
+            "server_mode_enabled": self.server_mode_toggle.isChecked(),
+            "server_port": self.server_port_spin.value(),
+        }
+        return current != self.current_server_settings
+
+    def _apply_server_mode_lock(self) -> None:
+        server_on = bool(self.current_server_settings.get("server_mode_enabled", False))
+        locked_widgets = [
+            self.model_dropdown,
+            self.device_dropdown,
+            self.quantization_dropdown,
+            self.task_dropdown,
+            self.audio_device_dropdown,
+            self.include_timestamps_cb,
+            self.beam_size_spin,
+            self.vad_filter_cb,
+            self.condition_on_previous_cb,
+        ]
+        for w in locked_widgets:
+            w.setEnabled(not server_on)
+
     def _check_for_changes(self) -> None:
         model_changed = self._model_settings_changed()
         task_changed = self._task_mode_selection_changed()
         audio_changed = self._audio_device_selection_changed()
         whisper_changed = self._whisper_settings_selection_changed()
-        has_changes = model_changed or task_changed or audio_changed or whisper_changed
+        server_changed = self._server_settings_selection_changed()
+        has_changes = (
+            model_changed or task_changed or audio_changed
+            or whisper_changed or server_changed
+        )
         self.update_btn.setEnabled(has_changes)
         if model_changed:
             self.update_btn.setText("Reload Model")
@@ -341,6 +428,23 @@ class SettingsDialog(QDialog):
             self.file_types_changed.emit(self._ext_checked)
 
     def _on_update_clicked(self) -> None:
+        if self._server_settings_selection_changed():
+            wants_server_on = self.server_mode_toggle.isChecked()
+            currently_on = bool(
+                self.current_server_settings.get("server_mode_enabled", False)
+            )
+            if wants_server_on and not currently_on and self._is_busy_check():
+                from PySide6.QtWidgets import QMessageBox
+                QMessageBox.warning(
+                    self,
+                    "Busy",
+                    "A transcription or batch job is currently running. "
+                    "Wait for it to finish before turning Server Mode on.",
+                )
+                self.server_mode_toggle.blockSignals(True)
+                self.server_mode_toggle.setChecked(False)
+                self.server_mode_toggle.blockSignals(False)
+
         if self._model_settings_changed():
             model = self.model_dropdown.currentText()
             quant = self.quantization_dropdown.currentText()
@@ -365,5 +469,11 @@ class SettingsDialog(QDialog):
                 "condition_on_previous_text": self.condition_on_previous_cb.isChecked(),
             }
             self.whisper_settings_changed.emit(settings)
+
+        if self._server_settings_selection_changed():
+            self.server_mode_changed.emit(
+                self.server_mode_toggle.isChecked(),
+                self.server_port_spin.value(),
+            )
 
         self.accept()

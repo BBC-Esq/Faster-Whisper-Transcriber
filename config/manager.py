@@ -24,7 +24,7 @@ class ConfigManager:
             "int8", "int8_float16", "int8_float32", "int8_bfloat16",
             "int16", "float16", "float32", "bfloat16"
         },
-        "output_formats": {"txt", "srt", "vtt", "tsv", "json"},
+        "output_formats": {"txt", "srt", "vtt", "json"},
         "single_file_output_modes": {
             "clipboard", "save_to_source", "save_and_clipboard", "save_to_custom"
         },
@@ -52,6 +52,8 @@ class ConfigManager:
             ".aac", ".amr", ".asf", ".avi", ".flac", ".m4a",
             ".mkv", ".mp3", ".mp4", ".ogg", ".wav", ".webm", ".wma",
         ],
+        "server_mode_enabled": False,
+        "server_port": 8765,
     }
 
     VALIDATION_SCHEMA = {
@@ -71,6 +73,8 @@ class ConfigManager:
         "single_file_output_mode": {"type": str, "options": "single_file_output_modes"},
         "output_directory": {"type": str},
         "batch_recursive": {"type": bool},
+        "server_mode_enabled": {"type": bool},
+        "server_port": {"type": int, "validator": "_validate_port"},
     }
 
     def __init__(self):
@@ -147,6 +151,11 @@ class ConfigManager:
         if isinstance(value, int) and 1 <= value <= 20:
             return value
         return self.DEFAULT_CONFIG["beam_size"]
+
+    def _validate_port(self, value: Any) -> int:
+        if isinstance(value, int) and 1024 <= value <= 65535:
+            return value
+        return self.DEFAULT_CONFIG["server_port"]
 
     def load_config(self) -> dict[str, Any]:
         return copy.deepcopy(self._ensure_cache())
