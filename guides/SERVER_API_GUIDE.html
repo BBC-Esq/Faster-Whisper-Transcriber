@@ -1,0 +1,1260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Faster-Whisper Transcriber &mdash; Server API Guide</title>
+<style>
+  :root {
+    --bg: #1a1b26;
+    --bg-surface: #1e2030;
+    --bg-code: #16171f;
+    --bg-table-head: #252738;
+    --bg-table-alt: #1c1d2e;
+    --text: #c0caf5;
+    --text-dim: #8890b0;
+    --text-bright: #e0e6ff;
+    --accent: #7aa2f7;
+    --accent-dim: #3d59a1;
+    --green: #9ece6a;
+    --green-dim: #2d4a22;
+    --orange: #ff9e64;
+    --red: #f7768e;
+    --purple: #bb9af7;
+    --cyan: #7dcfff;
+    --yellow: #e0af68;
+    --border: #2f3352;
+    --code-keyword: #bb9af7;
+    --code-string: #9ece6a;
+    --code-comment: #565f89;
+    --code-func: #7aa2f7;
+    --code-number: #ff9e64;
+    --code-param: #e0af68;
+    --scroll-thumb: #3d59a1;
+    --scroll-track: #16171f;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html {
+    scroll-behavior: smooth;
+    scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+  }
+
+  body {
+    font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, Oxygen, Ubuntu, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2rem 2.5rem 4rem;
+  }
+
+  .hero {
+    text-align: center;
+    padding: 2.5rem 0 2rem;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 2.5rem;
+  }
+  .hero h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-bright);
+    letter-spacing: -0.02em;
+  }
+  .hero h1 .accent { color: var(--accent); }
+  .hero p {
+    color: var(--text-dim);
+    margin-top: 0.5rem;
+    font-size: 0.95rem;
+  }
+
+  .toc {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 2.5rem;
+  }
+  .toc h2 {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin-bottom: 0.75rem;
+  }
+  .toc ol {
+    list-style: none;
+    counter-reset: toc;
+    padding: 0;
+    columns: 2;
+    column-gap: 2rem;
+  }
+  .toc li {
+    counter-increment: toc;
+    margin-bottom: 0.35rem;
+    break-inside: avoid;
+  }
+  .toc li::before {
+    content: counter(toc) ".";
+    color: var(--accent-dim);
+    font-weight: 600;
+    margin-right: 0.5rem;
+    font-size: 0.9rem;
+  }
+  .toc a {
+    color: var(--accent);
+    text-decoration: none;
+    font-size: 0.92rem;
+    transition: color 0.15s;
+  }
+  .toc a:hover { color: var(--cyan); }
+
+  section { margin-bottom: 2.5rem; }
+
+  h2 {
+    font-size: 1.35rem;
+    color: var(--text-bright);
+    font-weight: 700;
+    margin-bottom: 1rem;
+    padding-bottom: 0.4rem;
+    border-bottom: 2px solid var(--accent-dim);
+  }
+  h3 {
+    font-size: 1.05rem;
+    color: var(--accent);
+    font-weight: 600;
+    margin: 1.5rem 0 0.75rem;
+  }
+
+  p { margin-bottom: 0.85rem; }
+
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  pre {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 1rem 1.25rem;
+    overflow-x: auto;
+    margin: 0.75rem 0 1.25rem;
+    font-size: 0.85rem;
+    line-height: 1.6;
+    scrollbar-width: thin;
+  }
+  code {
+    font-family: 'Cascadia Code', 'Fira Code', 'JetBrains Mono', 'Consolas', monospace;
+    font-size: 0.85rem;
+  }
+  p code, li code, td code {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 0.1em 0.35em;
+    color: var(--cyan);
+    font-size: 0.82rem;
+  }
+
+  .kw  { color: var(--code-keyword); }
+  .fn  { color: var(--code-func); }
+  .str { color: var(--code-string); }
+  .cmt { color: var(--code-comment); font-style: italic; }
+  .num { color: var(--code-number); }
+  .par { color: var(--code-param); }
+  .op  { color: var(--text-dim); }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.75rem 0 1.25rem;
+    font-size: 0.88rem;
+  }
+  th {
+    background: var(--bg-table-head);
+    color: var(--text-bright);
+    font-weight: 600;
+    text-align: left;
+    padding: 0.6rem 0.85rem;
+    border-bottom: 2px solid var(--accent-dim);
+  }
+  td {
+    padding: 0.5rem 0.85rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  tr:nth-child(even) td { background: var(--bg-table-alt); }
+
+  .callout {
+    border-left: 3px solid var(--accent);
+    background: var(--bg-surface);
+    padding: 0.75rem 1rem;
+    border-radius: 0 6px 6px 0;
+    margin: 1rem 0;
+    font-size: 0.9rem;
+  }
+  .callout.tip  { border-left-color: var(--green); }
+  .callout.warn { border-left-color: var(--orange); }
+  .callout .tag {
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 0.75rem;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.25rem;
+  }
+  .callout.tip .tag  { color: var(--green); }
+  .callout.warn .tag { color: var(--orange); }
+  .callout.info .tag { color: var(--accent); }
+
+  .badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.15em 0.55em;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    vertical-align: middle;
+  }
+  .badge.get  { background: var(--green-dim); color: var(--green); }
+  .badge.post { background: #3b2a1a; color: var(--orange); }
+
+  hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 2rem 0;
+  }
+
+  ul, ol { padding-left: 1.5rem; margin-bottom: 0.85rem; }
+  li { margin-bottom: 0.3rem; }
+
+  .copy-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    margin-top: 0.75rem;
+    padding: 0.5rem 1.1rem;
+    background: var(--accent-dim);
+    color: var(--text-bright);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+    font-family: inherit;
+  }
+  .copy-btn:hover { background: var(--accent); color: var(--bg); }
+  .copy-btn:active { transform: scale(0.97); }
+  .copy-btn.copied {
+    background: var(--green-dim);
+    border-color: var(--green);
+    color: var(--green);
+    pointer-events: none;
+  }
+  .copy-btn svg { width: 16px; height: 16px; fill: currentColor; }
+
+  @media (max-width: 640px) {
+    body { padding: 1rem 1.2rem 2rem; }
+    .toc ol { columns: 1; }
+    pre { font-size: 0.78rem; padding: 0.75rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <h1>Faster-Whisper Transcriber &mdash; <span class="accent">Server API</span></h1>
+  <p>Integrate transcription into your own scripts, apps, and automation workflows</p>
+  <button class="copy-btn" onclick="copyPlainText(this)">
+    <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
+    Copy as Text (for LLMs)
+  </button>
+</div>
+
+<nav class="toc">
+  <h2>Contents</h2>
+  <ol>
+    <li><a href="#starting">Starting the Server</a></li>
+    <li><a href="#endpoints">Endpoints</a></li>
+    <li><a href="#quickstart">Quick Start</a></li>
+    <li><a href="#formats">Accepted Audio Formats</a></li>
+    <li><a href="#settings">Settings You Can Control</a></li>
+    <li><a href="#response">Response Format</a></li>
+    <li><a href="#models">Model Notes</a></li>
+    <li><a href="#status">Checking Server Status</a></li>
+    <li><a href="#queuing">Request Queuing</a></li>
+    <li><a href="#curl">Using curl</a></li>
+    <li><a href="#errors">Error Handling</a></li>
+    <li><a href="#full-example">Complete Example</a></li>
+  </ol>
+</nav>
+
+<section id="starting">
+<h2>1. Starting the Server</h2>
+
+<ol>
+  <li>Launch the Faster-Whisper Transcriber GUI.</li>
+  <li>Click the <strong>Settings</strong> (gear) icon in the main window.</li>
+  <li>In the <strong>Server Mode</strong> group box, flip the toggle from <strong>Off</strong> to <strong>On</strong> and set the <strong>Port</strong> (default: <code>8765</code>).</li>
+  <li>Click <strong>Update Settings</strong>.</li>
+  <li>The status bar at the bottom of the main window will show <em>"&hellip; | server: on (8765)"</em> and the voice recorder is disabled while the server runs.</li>
+  <li>The server is now accepting requests.</li>
+</ol>
+
+<p>To stop the server, open <strong>Settings</strong> again and flip the Server Mode toggle back to <strong>Off</strong>.</p>
+
+<div class="callout tip">
+  <div class="tag">Tip</div>
+  The server binds to <code>0.0.0.0</code>, so it is accessible at
+  <code>http://127.0.0.1:8765</code> locally and at
+  <code>http://&lt;your-ip&gt;:8765</code> from other machines on your network.
+</div>
+
+<div class="callout info">
+  <div class="tag">Note</div>
+  This backend uses the <code>faster-whisper</code> library, which exposes
+  the standard Whisper knobs (<code>beam_size</code>,
+  <code>vad_filter</code>, <code>condition_on_previous_text</code>,
+  <code>word_timestamps</code>, <code>temperature</code>, &hellip;).
+  The server surfaces the ones that actually matter for integration.
+</div>
+</section>
+
+<section id="endpoints">
+<h2>2. Endpoints</h2>
+
+<table>
+  <thead>
+    <tr><th>Endpoint</th><th>Method</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>/health</code></td><td><span class="badge get">GET</span></td><td>Check if the server is running</td></tr>
+    <tr><td><code>/status</code></td><td><span class="badge get">GET</span></td><td>Server status, queue depth, whether a transcription is active</td></tr>
+    <tr><td><code>/models</code></td><td><span class="badge get">GET</span></td><td>List all available models and whether they support translation</td></tr>
+    <tr><td><code>/transcribe</code></td><td><span class="badge post">POST</span></td><td>Transcribe audio from a file upload (multipart form)</td></tr>
+    <tr><td><code>/transcribe/raw</code></td><td><span class="badge post">POST</span></td><td>Transcribe audio from base64-encoded data (JSON body)</td></tr>
+  </tbody>
+</table>
+
+<p>The server also provides interactive API documentation:</p>
+<ul>
+  <li><strong>Swagger UI:</strong> <code>http://127.0.0.1:8765/docs</code></li>
+  <li><strong>ReDoc:</strong> <code>http://127.0.0.1:8765/redoc</code></li>
+</ul>
+</section>
+
+<section id="quickstart">
+<h2>3. Quick Start</h2>
+
+<p>The simplest possible request &mdash; send an audio file and get text back:</p>
+
+<pre><code><span class="kw">import</span> requests
+
+response <span class="op">=</span> requests.<span class="fn">post</span>(
+    <span class="str">"http://127.0.0.1:8765/transcribe"</span>,
+    <span class="par">files</span><span class="op">=</span>{<span class="str">"audio"</span>: <span class="fn">open</span>(<span class="str">"my_audio.mp3"</span>, <span class="str">"rb"</span>)},
+)
+
+<span class="fn">print</span>(response.<span class="fn">json</span>()[<span class="str">"text"</span>])</code></pre>
+
+<p>That's it. The server uses whatever model, quantization, task, and whisper params were configured in the GUI when Server Mode was turned on. Language defaults to auto-detection.</p>
+</section>
+
+<section id="formats">
+<h2>4. Accepted Audio Input Formats</h2>
+
+<h3>4a. Audio Files <span style="color:var(--text-dim); font-weight:400;">(most common)</span></h3>
+<p>Standard audio files uploaded directly. Supported formats include:
+<code>.mp3</code> <code>.wav</code> <code>.flac</code> <code>.m4a</code>
+<code>.ogg</code> <code>.aac</code> <code>.wma</code> <code>.webm</code>
+<code>.mp4</code> <code>.mkv</code> <code>.avi</code> <code>.asf</code> <code>.amr</code></p>
+
+<pre><code><span class="kw">import</span> requests
+
+<span class="kw">with</span> <span class="fn">open</span>(<span class="str">"recording.wav"</span>, <span class="str">"rb"</span>) <span class="kw">as</span> f:
+    response <span class="op">=</span> requests.<span class="fn">post</span>(
+        <span class="str">"http://127.0.0.1:8765/transcribe"</span>,
+        <span class="par">files</span><span class="op">=</span>{<span class="str">"audio"</span>: (<span class="str">"recording.wav"</span>, f, <span class="str">"audio/wav"</span>)},
+    )
+
+<span class="fn">print</span>(response.<span class="fn">json</span>()[<span class="str">"text"</span>])</code></pre>
+
+<h3>4b. NumPy Arrays</h3>
+<p>If your program already has audio as a NumPy array, serialize it with <code>np.save()</code> and upload the <code>.npy</code> file:</p>
+
+<pre><code><span class="kw">import</span> io
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">import</span> requests
+
+<span class="cmt"># Your audio as a numpy array (float32, mono)</span>
+audio_array <span class="op">=</span> np.<span class="fn">random.randn</span>(<span class="num">16000</span> <span class="op">*</span> <span class="num">5</span>).<span class="fn">astype</span>(np.float32)  <span class="cmt"># 5 seconds at 16kHz</span>
+
+buffer <span class="op">=</span> io.<span class="fn">BytesIO</span>()
+np.<span class="fn">save</span>(buffer, audio_array)
+buffer.<span class="fn">seek</span>(<span class="num">0</span>)
+
+response <span class="op">=</span> requests.<span class="fn">post</span>(
+    <span class="str">"http://127.0.0.1:8765/transcribe"</span>,
+    <span class="par">files</span><span class="op">=</span>{<span class="str">"audio"</span>: (<span class="str">"audio.npy"</span>, buffer, <span class="str">"application/octet-stream"</span>)},
+    <span class="par">data</span><span class="op">=</span>{<span class="str">"sample_rate"</span>: <span class="str">"16000"</span>},
+)
+
+<span class="fn">print</span>(response.<span class="fn">json</span>()[<span class="str">"text"</span>])</code></pre>
+
+<div class="callout info">
+  <div class="tag">Note</div>
+  If your audio is at a different sample rate (e.g., 44100 Hz), pass <code>sample_rate=44100</code> and the server will resample it to 16 kHz automatically.
+</div>
+
+<h3>4c. PyTorch Tensors</h3>
+
+<pre><code><span class="kw">import</span> io
+<span class="kw">import</span> torch
+<span class="kw">import</span> requests
+
+audio_tensor <span class="op">=</span> torch.<span class="fn">randn</span>(<span class="num">16000</span> <span class="op">*</span> <span class="num">5</span>)  <span class="cmt"># 5 seconds at 16kHz</span>
+
+buffer <span class="op">=</span> io.<span class="fn">BytesIO</span>()
+torch.<span class="fn">save</span>(audio_tensor, buffer)
+buffer.<span class="fn">seek</span>(<span class="num">0</span>)
+
+response <span class="op">=</span> requests.<span class="fn">post</span>(
+    <span class="str">"http://127.0.0.1:8765/transcribe"</span>,
+    <span class="par">files</span><span class="op">=</span>{<span class="str">"audio"</span>: (<span class="str">"audio.pt"</span>, buffer, <span class="str">"application/octet-stream"</span>)},
+    <span class="par">data</span><span class="op">=</span>{<span class="str">"sample_rate"</span>: <span class="str">"16000"</span>},
+)
+
+<span class="fn">print</span>(response.<span class="fn">json</span>()[<span class="str">"text"</span>])</code></pre>
+
+<h3>4d. Raw PCM Bytes</h3>
+<p>Common in real-time audio pipelines:</p>
+
+<pre><code><span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">import</span> requests
+
+audio <span class="op">=</span> np.<span class="fn">random.randn</span>(<span class="num">16000</span> <span class="op">*</span> <span class="num">3</span>).<span class="fn">astype</span>(np.float32)  <span class="cmt"># 3 seconds</span>
+raw_bytes <span class="op">=</span> audio.<span class="fn">tobytes</span>()
+
+response <span class="op">=</span> requests.<span class="fn">post</span>(
+    <span class="str">"http://127.0.0.1:8765/transcribe"</span>,
+    <span class="par">files</span><span class="op">=</span>{<span class="str">"audio"</span>: (<span class="str">"audio.raw"</span>, raw_bytes, <span class="str">"application/octet-stream"</span>)},
+    <span class="par">data</span><span class="op">=</span>{
+        <span class="str">"audio_format"</span>: <span class="str">"pcm"</span>,
+        <span class="str">"sample_rate"</span>: <span class="str">"16000"</span>,
+        <span class="str">"dtype"</span>: <span class="str">"float32"</span>,  <span class="cmt"># also supports: int16, int32, float64</span>
+    },
+)
+
+<span class="fn">print</span>(response.<span class="fn">json</span>()[<span class="str">"text"</span>])</code></pre>
+
+<h3>4e. Base64-Encoded Data <span style="color:var(--text-dim); font-weight:400;">(JSON endpoint)</span></h3>
+<p>For sending everything as JSON with no multipart form:</p>
+
+<pre><code><span class="kw">import</span> base64, io
+<span class="kw">import</span> numpy <span class="kw">as</span> np
+<span class="kw">import</span> requests
+
+audio <span class="op">=</span> np.<span class="fn">random.randn</span>(<span class="num">16000</span> <span class="op">*</span> <span class="num">5</span>).<span class="fn">astype</span>(np.float32)
+buffer <span class="op">=</span> io.<span class="fn">BytesIO</span>()
+np.<span class="fn">save</span>(buffer, audio)
+b64_data <span class="op">=</span> base64.<span class="fn">b64encode</span>(buffer.<span class="fn">getvalue</span>()).<span class="fn">decode</span>(<span class="str">"utf-8"</span>)
+
+response <span class="op">=</span> requests.<span class="fn">post</span>(
+    <span class="str">"http://127.0.0.1:8765/transcribe/raw"</span>,
+    <span class="par">json</span><span class="op">=</span>{
+        <span class="str">"audio_data"</span>: b64_data,
+        <span class="str">"audio_format"</span>: <span class="str">"numpy"</span>,
+        <span class="str">"sample_rate"</span>: <span class="num">16000</span>,
+    },
+)
+
+<span class="fn">print</span>(response.<span class="fn">json</span>()[<span class="str">"text"</span>])</code></pre>
+
+<p>You can also send a complete audio file as base64:</p>
+
+<pre><code><span class="kw">import</span> base64
+<span class="kw">import</span> requests
+
+<span class="kw">with</span> <span class="fn">open</span>(<span class="str">"my_audio.mp3"</span>, <span class="str">"rb"</span>) <span class="kw">as</span> f:
+    b64_data <span class="op">=</span> base64.<span class="fn">b64encode</span>(f.<span class="fn">read</span>()).<span class="fn">decode</span>(<span class="str">"utf-8"</span>)
+
+response <span class="op">=</span> requests.<span class="fn">post</span>(
+    <span class="str">"http://127.0.0.1:8765/transcribe/raw"</span>,
+    <span class="par">json</span><span class="op">=</span>{
+        <span class="str">"audio_data"</span>: b64_data,
+        <span class="str">"audio_format"</span>: <span class="str">"file"</span>,
+    },
+)
+
+<span class="fn">print</span>(response.<span class="fn">json</span>()[<span class="str">"text"</span>])</code></pre>
+</section>
+
+<section id="settings">
+<h2>5. Settings You Can Control</h2>
+
+<p>Every setting is optional. If you omit a value, the server uses whatever was configured in the GUI when Server Mode was turned on.</p>
+
+<table>
+  <thead>
+    <tr><th>Parameter</th><th>Type</th><th>Description</th><th>Values</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>model</code></td><td>string</td><td>Name of the Whisper checkpoint</td><td><code>"large-v3"</code>, <code>"large-v3-turbo"</code>, <code>"medium"</code>, <code>"medium.en"</code>, <code>"small"</code>, <code>"small.en"</code>, <code>"base"</code>, <code>"base.en"</code>, <code>"tiny"</code>, <code>"tiny.en"</code>, <code>"distil-whisper-large-v3"</code>, <code>"distil-whisper-medium.en"</code>, <code>"distil-whisper-small.en"</code></td></tr>
+    <tr><td><code>quantization</code></td><td>string</td><td>CTranslate2 <code>compute_type</code>. Which pre-converted variant of the model to load.</td><td><code>"float32"</code>, <code>"float16"</code>, <code>"bfloat16"</code>, <code>"int8"</code>, <code>"int8_float16"</code>, <code>"int8_bfloat16"</code>, <code>"int8_float32"</code></td></tr>
+    <tr><td><code>device</code></td><td>string</td><td>CPU or GPU</td><td><code>"cuda"</code>, <code>"cpu"</code></td></tr>
+    <tr><td><code>language</code></td><td>string</td><td>ISO 639-1 language code. Omit or leave empty to auto-detect.</td><td><code>"en"</code>, <code>"fr"</code>, <code>"es"</code>, <code>"de"</code>, <code>"zh"</code>, &hellip; (99 Whisper languages)</td></tr>
+    <tr><td><code>task_mode</code></td><td>string</td><td>Transcribe in source language or translate to English.</td><td><code>"transcribe"</code>, <code>"translate"</code></td></tr>
+    <tr><td><code>include_timestamps</code></td><td>boolean</td><td>Include segment timestamps in the response. When false, the server asks faster-whisper with <code>without_timestamps=True</code> and returns <code>segments: []</code>.</td><td><code>"true"</code>, <code>"false"</code></td></tr>
+    <tr><td><code>word_timestamps</code></td><td>boolean</td><td>Forwarded to faster-whisper. Enables word-level timings inside each segment (still returned at the segment level in the response).</td><td><code>"true"</code>, <code>"false"</code></td></tr>
+    <tr><td><code>beam_size</code></td><td>integer</td><td>Number of beams for decoding. Higher = more accurate, slower.</td><td><code>1</code>&ndash;<code>20</code> (default <code>5</code>)</td></tr>
+    <tr><td><code>vad_filter</code></td><td>boolean</td><td>Run Silero VAD before decoding. Forced on when <code>batch_size&gt;1</code>.</td><td><code>"true"</code>, <code>"false"</code></td></tr>
+    <tr><td><code>condition_on_previous_text</code></td><td>boolean</td><td>Use previous segment output as context for the next segment. Helps coherence but can propagate hallucinations.</td><td><code>"true"</code>, <code>"false"</code></td></tr>
+    <tr><td><code>batch_size</code></td><td>integer</td><td>When <code>&gt;1</code>, uses <code>BatchedInferencePipeline</code> with tuned VAD params and processes VAD-chunked speech in parallel.</td><td><code>1</code>&ndash;<code>128</code> (default <code>1</code>)</td></tr>
+    <tr><td><code>audio_format</code></td><td>string</td><td>Override input format auto-detection</td><td><code>"auto"</code>, <code>"file"</code>, <code>"numpy"</code>, <code>"tensor"</code>, <code>"pcm"</code></td></tr>
+    <tr><td><code>sample_rate</code></td><td>integer</td><td>Sample rate of raw audio input (resampled to 16 kHz)</td><td>e.g. <code>"16000"</code>, <code>"22050"</code>, <code>"44100"</code>, <code>"48000"</code></td></tr>
+    <tr><td><code>dtype</code></td><td>string</td><td>Data type for raw PCM input</td><td><code>"float32"</code>, <code>"float64"</code>, <code>"int16"</code>, <code>"int32"</code></td></tr>
+  </tbody>
+</table>
+
+<h3>Example with Custom Settings</h3>
+
+<pre><code><span class="kw">import</span> requests
+
+<span class="kw">with</span> <span class="fn">open</span>(<span class="str">"lecture.mp3"</span>, <span class="str">"rb"</span>) <span class="kw">as</span> f:
+    response <span class="op">=</span> requests.<span class="fn">post</span>(
+        <span class="str">"http://127.0.0.1:8765/transcribe"</span>,
+        <span class="par">files</span><span class="op">=</span>{<span class="str">"audio"</span>: (<span class="str">"lecture.mp3"</span>, f, <span class="str">"audio/mpeg"</span>)},
+        <span class="par">data</span><span class="op">=</span>{
+            <span class="str">"model"</span>: <span class="str">"large-v3"</span>,
+            <span class="str">"quantization"</span>: <span class="str">"float16"</span>,
+            <span class="str">"device"</span>: <span class="str">"cuda"</span>,
+            <span class="str">"task_mode"</span>: <span class="str">"transcribe"</span>,
+            <span class="str">"language"</span>: <span class="str">"en"</span>,
+            <span class="str">"include_timestamps"</span>: <span class="str">"true"</span>,
+            <span class="str">"beam_size"</span>: <span class="str">"5"</span>,
+            <span class="str">"vad_filter"</span>: <span class="str">"true"</span>,
+            <span class="str">"batch_size"</span>: <span class="str">"8"</span>,
+        },
+    )
+
+result <span class="op">=</span> response.<span class="fn">json</span>()
+<span class="fn">print</span>(result[<span class="str">"text"</span>])
+<span class="fn">print</span>(<span class="str">f"Detected language: </span>{result[<span class="str">'language'</span>]}<span class="str">"</span>)
+<span class="fn">print</span>(<span class="str">f"Took </span>{result[<span class="str">'processing_time_seconds'</span>]}<span class="str"> seconds"</span>)</code></pre>
+
+<div class="callout warn">
+  <div class="tag">Important</div>
+  When <code>batch_size &gt; 1</code> the server forces <code>vad_filter=true</code>
+  and applies tuned VAD parameters (threshold, min/max speech duration,
+  speech_pad_ms) needed by faster-whisper's
+  <code>BatchedInferencePipeline</code>. You cannot disable VAD while
+  batching.
+</div>
+</section>
+
+<section id="response">
+<h2>6. Response Format</h2>
+
+<p>Every transcription request returns a JSON object. Here is what a real response looks like:</p>
+
+<h3>6a. Plain text only <span style="color:var(--text-dim); font-weight:400;">(include_timestamps omitted or false)</span></h3>
+
+<pre><code><span class="cmt">// POST /transcribe  &mdash;  include_timestamps defaults to false</span>
+{
+    <span class="str">"text"</span>: <span class="str">"Good morning everyone. Today we'll be discussing the quarterly results and our plans for the upcoming product launch."</span>,
+    <span class="str">"segments"</span>: [],
+    <span class="str">"language"</span>: <span class="str">"en"</span>,
+    <span class="str">"duration"</span>: <span class="num">138.135</span>,
+    <span class="str">"task"</span>: <span class="str">"transcribe"</span>,
+    <span class="str">"model_used"</span>: <span class="str">"large-v3 - float16"</span>,
+    <span class="str">"processing_time_seconds"</span>: <span class="num">2.418</span>
+}</code></pre>
+
+<p>When timestamps are off, <code>segments</code> is always an empty list <code>[]</code>.</p>
+
+<h3>6b. With timestamps <span style="color:var(--text-dim); font-weight:400;">(include_timestamps=true)</span></h3>
+
+<pre><code><span class="cmt">// POST /transcribe  &mdash;  include_timestamps=true</span>
+{
+    <span class="str">"text"</span>: <span class="str">"Good morning everyone. Today we'll be discussing the quarterly results and our plans for the upcoming product launch."</span>,
+    <span class="str">"segments"</span>: [
+        {
+            <span class="str">"start"</span>: <span class="num">0.081</span>,
+            <span class="str">"end"</span>: <span class="num">4.862</span>,
+            <span class="str">"text"</span>: <span class="str">" Good morning everyone. Today we'll be discussing"</span>
+        },
+        {
+            <span class="str">"start"</span>: <span class="num">4.862</span>,
+            <span class="str">"end"</span>: <span class="num">8.241</span>,
+            <span class="str">"text"</span>: <span class="str">" the quarterly results and our plans for the upcoming product launch."</span>
+        }
+    ],
+    <span class="str">"language"</span>: <span class="str">"en"</span>,
+    <span class="str">"duration"</span>: <span class="num">138.135</span>,
+    <span class="str">"task"</span>: <span class="str">"transcribe"</span>,
+    <span class="str">"model_used"</span>: <span class="str">"large-v3 - float16"</span>,
+    <span class="str">"processing_time_seconds"</span>: <span class="num">3.012</span>
+}</code></pre>
+
+<p>Each segment corresponds to one Whisper decoding segment (VAD-chunked if <code>vad_filter</code> is on). Timestamps are in seconds with millisecond precision (3 decimal places).</p>
+
+<h3>6c. Field Reference</h3>
+
+<table>
+  <thead>
+    <tr><th>Field</th><th>Type</th><th>Always Present</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>text</code></td><td>string</td><td>Yes</td><td>The complete transcription as a single newline-joined string.</td></tr>
+    <tr><td><code>segments</code></td><td>array</td><td>Yes</td><td>Timestamped segments. Empty <code>[]</code> when <code>include_timestamps</code> is false.</td></tr>
+    <tr><td><code>segments[].start</code></td><td>float</td><td>&mdash;</td><td>Segment start time in seconds.</td></tr>
+    <tr><td><code>segments[].end</code></td><td>float</td><td>&mdash;</td><td>Segment end time in seconds.</td></tr>
+    <tr><td><code>segments[].text</code></td><td>string</td><td>&mdash;</td><td>The transcribed words within this time range (faster-whisper leaves a leading space).</td></tr>
+    <tr><td><code>language</code></td><td>string</td><td>Yes</td><td>Detected (or echoed) ISO language code.</td></tr>
+    <tr><td><code>duration</code></td><td>float</td><td>Yes</td><td>Duration of the processed audio, in seconds.</td></tr>
+    <tr><td><code>task</code></td><td>string</td><td>Yes</td><td><code>"transcribe"</code> or <code>"translate"</code>.</td></tr>
+    <tr><td><code>model_used</code></td><td>string</td><td>Yes</td><td>Full model key used, e.g., <code>"large-v3 - float16"</code>.</td></tr>
+    <tr><td><code>processing_time_seconds</code></td><td>float</td><td>Yes</td><td>How long the transcription took (excludes network transfer).</td></tr>
+  </tbody>
+</table>
+
+<h3>6d. How to Access Each Field in Python</h3>
+
+<pre><code><span class="kw">import</span> requests
+
+<span class="kw">with</span> <span class="fn">open</span>(<span class="str">"meeting.mp3"</span>, <span class="str">"rb"</span>) <span class="kw">as</span> f:
+    r <span class="op">=</span> requests.<span class="fn">post</span>(
+        <span class="str">"http://127.0.0.1:8765/transcribe"</span>,
+        <span class="par">files</span><span class="op">=</span>{<span class="str">"audio"</span>: (<span class="str">"meeting.mp3"</span>, f)},
+        <span class="par">data</span><span class="op">=</span>{<span class="str">"include_timestamps"</span>: <span class="str">"true"</span>},
+    )
+
+result <span class="op">=</span> r.<span class="fn">json</span>()
+
+<span class="fn">print</span>(<span class="str">"Transcript:"</span>, result[<span class="str">"text"</span>])
+<span class="fn">print</span>(<span class="str">f"Detected: </span>{result[<span class="str">'language'</span>]}<span class="str">, duration </span>{result[<span class="str">'duration'</span>]:<span class="num">.1f</span>}<span class="str">s"</span>)
+<span class="fn">print</span>(<span class="str">f"Model: </span>{result[<span class="str">'model_used'</span>]}<span class="str">"</span>)
+<span class="fn">print</span>(<span class="str">f"Task: </span>{result[<span class="str">'task'</span>]}<span class="str">, took </span>{result[<span class="str">'processing_time_seconds'</span>]:<span class="num">.1f</span>}<span class="str">s"</span>)
+
+<span class="kw">for</span> seg <span class="kw">in</span> result[<span class="str">"segments"</span>]:
+    <span class="fn">print</span>(<span class="str">f"[</span>{seg[<span class="str">'start'</span>]:<span class="num">07.3f</span>}<span class="str"> &rarr; </span>{seg[<span class="str">'end'</span>]:<span class="num">07.3f</span>}<span class="str">] </span>{seg[<span class="str">'text'</span>].<span class="fn">strip</span>()}<span class="str">"</span>)</code></pre>
+
+<h3>6e. Converting Segments to SRT in Your Code</h3>
+
+<p>The API always returns JSON. If you need subtitle format, convert the segments yourself:</p>
+
+<pre><code><span class="kw">def</span> <span class="fn">seconds_to_srt_time</span>(s):
+    h <span class="op">=</span> <span class="fn">int</span>(s <span class="op">//</span> <span class="num">3600</span>)
+    m <span class="op">=</span> <span class="fn">int</span>((s <span class="op">%</span> <span class="num">3600</span>) <span class="op">//</span> <span class="num">60</span>)
+    sec <span class="op">=</span> s <span class="op">%</span> <span class="num">60</span>
+    <span class="kw">return</span> <span class="str">f"</span>{h:<span class="num">02d</span>}<span class="str">:</span>{m:<span class="num">02d</span>}<span class="str">:</span>{sec:<span class="num">06.3f</span>}<span class="str">"</span>.<span class="fn">replace</span>(<span class="str">"."</span>, <span class="str">","</span>)
+
+<span class="kw">def</span> <span class="fn">to_srt</span>(segments):
+    lines <span class="op">=</span> []
+    <span class="kw">for</span> i, seg <span class="kw">in</span> <span class="fn">enumerate</span>(segments, <span class="num">1</span>):
+        lines.<span class="fn">append</span>(<span class="str">f"</span>{i}<span class="str">"</span>)
+        lines.<span class="fn">append</span>(<span class="str">f"</span>{<span class="fn">seconds_to_srt_time</span>(seg[<span class="str">'start'</span>])}<span class="str"> --&gt; </span>{<span class="fn">seconds_to_srt_time</span>(seg[<span class="str">'end'</span>])}<span class="str">"</span>)
+        lines.<span class="fn">append</span>(seg[<span class="str">"text"</span>].<span class="fn">strip</span>())
+        lines.<span class="fn">append</span>(<span class="str">""</span>)
+    <span class="kw">return</span> <span class="str">"\n"</span>.<span class="fn">join</span>(lines)
+
+srt_text <span class="op">=</span> <span class="fn">to_srt</span>(result[<span class="str">"segments"</span>])
+<span class="fn">print</span>(srt_text)</code></pre>
+</section>
+
+<section id="models">
+<h2>7. Model Notes</h2>
+
+<p>This backend uses <a href="https://github.com/SYSTRAN/faster-whisper">faster-whisper</a>, which loads CTranslate2-converted Whisper checkpoints. Models are pulled on-demand from HuggingFace under <code>ctranslate2-4you/whisper-&lt;model&gt;-ct2-&lt;quantization&gt;</code> (or <code>ctranslate2-4you/distil-whisper-&lt;model&gt;-ct2-&lt;quantization&gt;</code> for the Distil variants).</p>
+
+<table>
+  <thead>
+    <tr><th>Model family</th><th>English-only?</th><th>Translation?</th><th>Notes</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>large-v3 / large-v3-turbo</td><td>No</td><td>Yes</td><td>Multilingual; turbo is a fine-tune with fewer decoder layers.</td></tr>
+    <tr><td>medium / small / base / tiny</td><td>No</td><td>Yes</td><td>Multilingual; smaller = faster + less VRAM / RAM.</td></tr>
+    <tr><td>medium.en / small.en / base.en / tiny.en</td><td>Yes</td><td>No</td><td>English-only. Slightly better English accuracy at the same size. Pass <code>language="en"</code>.</td></tr>
+    <tr><td>distil-whisper-large-v3 / medium.en / small.en</td><td>Varies</td><td>No</td><td>Distilled variants: faster, smaller, English-focused.</td></tr>
+  </tbody>
+</table>
+
+<div class="callout warn">
+  <div class="tag">Important</div>
+  <code>.en</code> models and all Distil variants <strong>do not support
+  translation</strong>. If you request <code>task_mode="translate"</code>
+  against one of these models, faster-whisper will raise and the server
+  returns HTTP 500.
+</div>
+</section>
+
+<section id="status">
+<h2>8. Checking Server Status</h2>
+
+<h3>Health Check</h3>
+<pre><code><span class="kw">import</span> requests
+
+r <span class="op">=</span> requests.<span class="fn">get</span>(<span class="str">"http://127.0.0.1:8765/health"</span>)
+<span class="fn">print</span>(r.<span class="fn">json</span>())</code></pre>
+
+<p>Returns:</p>
+<pre><code>{
+    <span class="str">"status"</span>: <span class="str">"ok"</span>
+}</code></pre>
+
+<h3>Server Status</h3>
+<pre><code>r <span class="op">=</span> requests.<span class="fn">get</span>(<span class="str">"http://127.0.0.1:8765/status"</span>)
+status <span class="op">=</span> r.<span class="fn">json</span>()
+<span class="fn">print</span>(status)</code></pre>
+
+<p>Returns (when idle):</p>
+<pre><code>{
+    <span class="str">"server_running"</span>: <span class="kw">true</span>,
+    <span class="str">"queue_depth"</span>: <span class="num">0</span>,
+    <span class="str">"transcription_active"</span>: <span class="kw">false</span>
+}</code></pre>
+
+<p>Returns (while processing one request with two more waiting):</p>
+<pre><code>{
+    <span class="str">"server_running"</span>: <span class="kw">true</span>,
+    <span class="str">"queue_depth"</span>: <span class="num">2</span>,
+    <span class="str">"transcription_active"</span>: <span class="kw">true</span>
+}</code></pre>
+
+<table>
+  <thead>
+    <tr><th>Field</th><th>Type</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>server_running</code></td><td>bool</td><td>Always <code>true</code> (if the server weren't running, the request would fail).</td></tr>
+    <tr><td><code>queue_depth</code></td><td>int</td><td>Number of requests waiting in line. <code>0</code> means no queue.</td></tr>
+    <tr><td><code>transcription_active</code></td><td>bool</td><td><code>true</code> if a transcription is currently being processed.</td></tr>
+  </tbody>
+</table>
+
+<p>Example &mdash; wait until the server is free before submitting:</p>
+
+<pre><code><span class="kw">import</span> time
+<span class="kw">import</span> requests
+
+<span class="kw">while</span> <span class="kw">True</span>:
+    status <span class="op">=</span> requests.<span class="fn">get</span>(<span class="str">"http://127.0.0.1:8765/status"</span>).<span class="fn">json</span>()
+    <span class="kw">if</span> status[<span class="str">"queue_depth"</span>] <span class="op">==</span> <span class="num">0</span> <span class="kw">and not</span> status[<span class="str">"transcription_active"</span>]:
+        <span class="kw">break</span>
+    <span class="fn">print</span>(<span class="str">f"Server busy (queue: </span>{status[<span class="str">'queue_depth'</span>]}<span class="str">), waiting..."</span>)
+    time.<span class="fn">sleep</span>(<span class="num">2</span>)
+
+<span class="fn">print</span>(<span class="str">"Server is free, submitting..."</span>)</code></pre>
+
+<h3>List Available Models</h3>
+<pre><code>r <span class="op">=</span> requests.<span class="fn">get</span>(<span class="str">"http://127.0.0.1:8765/models"</span>)
+models <span class="op">=</span> r.<span class="fn">json</span>()
+<span class="fn">print</span>(models)</code></pre>
+
+<p>Returns a dictionary keyed by model name:</p>
+<pre><code>{
+    <span class="str">"large-v3"</span>: {
+        <span class="str">"name"</span>: <span class="str">"large-v3"</span>,
+        <span class="str">"supports_translation"</span>: <span class="kw">true</span>
+    },
+    <span class="str">"medium.en"</span>: {
+        <span class="str">"name"</span>: <span class="str">"medium.en"</span>,
+        <span class="str">"supports_translation"</span>: <span class="kw">false</span>
+    },
+    <span class="str">"distil-whisper-large-v3"</span>: {
+        <span class="str">"name"</span>: <span class="str">"distil-whisper-large-v3"</span>,
+        <span class="str">"supports_translation"</span>: <span class="kw">false</span>
+    }
+    <span class="cmt">// ... etc</span>
+}</code></pre>
+
+<div class="callout info">
+  <div class="tag">Note</div>
+  Unlike the WhisperS2T sister project, this <code>/models</code> endpoint returns <strong>one entry per base model name</strong>, not one entry per <code>(name, quantization)</code> pair. Use the <code>quantization</code> field on <code>/transcribe</code> to pick the precision.
+</div>
+
+<p>Example &mdash; find all multilingual models:</p>
+
+<pre><code>models <span class="op">=</span> requests.<span class="fn">get</span>(<span class="str">"http://127.0.0.1:8765/models"</span>).<span class="fn">json</span>()
+
+<span class="kw">for</span> name, info <span class="kw">in</span> models.<span class="fn">items</span>():
+    <span class="kw">if</span> info[<span class="str">"supports_translation"</span>]:
+        <span class="fn">print</span>(name)</code></pre>
+</section>
+
+<section id="queuing">
+<h2>9. Request Queuing</h2>
+
+<p>The server processes one transcription at a time (GPU is a shared resource). If you send multiple requests simultaneously, they are placed in a queue and processed in order. Each client waits for its own result &mdash; you don't need to poll.</p>
+
+<pre><code><span class="kw">import</span> threading
+<span class="kw">import</span> requests
+
+<span class="kw">def</span> <span class="fn">transcribe</span>(file_path):
+    <span class="kw">with</span> <span class="fn">open</span>(file_path, <span class="str">"rb"</span>) <span class="kw">as</span> f:
+        r <span class="op">=</span> requests.<span class="fn">post</span>(
+            <span class="str">"http://127.0.0.1:8765/transcribe"</span>,
+            <span class="par">files</span><span class="op">=</span>{<span class="str">"audio"</span>: (file_path, f)},
+        )
+    <span class="fn">print</span>(<span class="str">f"</span>{file_path}<span class="str">: </span>{r.<span class="fn">json</span>()[<span class="str">'text'</span>][:<span class="num">80</span>]}<span class="str">..."</span>)
+
+threads <span class="op">=</span> [
+    threading.<span class="fn">Thread</span>(<span class="par">target</span><span class="op">=</span>transcribe, <span class="par">args</span><span class="op">=</span>(<span class="str">"file1.mp3"</span>,)),
+    threading.<span class="fn">Thread</span>(<span class="par">target</span><span class="op">=</span>transcribe, <span class="par">args</span><span class="op">=</span>(<span class="str">"file2.mp3"</span>,)),
+    threading.<span class="fn">Thread</span>(<span class="par">target</span><span class="op">=</span>transcribe, <span class="par">args</span><span class="op">=</span>(<span class="str">"file3.mp3"</span>,)),
+]
+<span class="kw">for</span> t <span class="kw">in</span> threads:
+    t.<span class="fn">start</span>()
+<span class="kw">for</span> t <span class="kw">in</span> threads:
+    t.<span class="fn">join</span>()</code></pre>
+</section>
+
+<section id="curl">
+<h2>10. Using curl (Command Line)</h2>
+
+<pre><code><span class="cmt"># Health check</span>
+curl http://127.0.0.1:8765/health
+
+<span class="cmt"># Transcribe a file</span>
+curl -F <span class="str">"audio=@my_audio.mp3"</span> http://127.0.0.1:8765/transcribe
+
+<span class="cmt"># Transcribe with settings</span>
+curl -F <span class="str">"audio=@my_audio.mp3"</span> \
+     -F <span class="str">"model=large-v3"</span> \
+     -F <span class="str">"quantization=float16"</span> \
+     -F <span class="str">"task_mode=transcribe"</span> \
+     -F <span class="str">"language=en"</span> \
+     -F <span class="str">"include_timestamps=true"</span> \
+     -F <span class="str">"beam_size=5"</span> \
+     http://127.0.0.1:8765/transcribe</code></pre>
+</section>
+
+<section id="errors">
+<h2>11. Error Handling</h2>
+
+<p>All error responses return a JSON object with a <code>detail</code> field explaining what went wrong.</p>
+
+<h3>400 &mdash; Bad Request</h3>
+<pre><code><span class="cmt">// Invalid model name</span>
+{<span class="str">"detail"</span>: <span class="str">"Unknown model 'FakeModel'. Available: ['tiny', 'tiny.en', 'base', ...]"</span>}
+
+<span class="cmt">// Empty audio</span>
+{<span class="str">"detail"</span>: <span class="str">"Empty audio data"</span>}
+
+<span class="cmt">// Unreadable audio format</span>
+{<span class="str">"detail"</span>: <span class="str">"Failed to process audio: [decoder error details]"</span>}</code></pre>
+
+<h3>422 &mdash; Validation Error</h3>
+<pre><code>{
+    <span class="str">"detail"</span>: [
+        {
+            <span class="str">"type"</span>: <span class="str">"missing"</span>,
+            <span class="str">"loc"</span>: [<span class="str">"body"</span>, <span class="str">"audio"</span>],
+            <span class="str">"msg"</span>: <span class="str">"Field required"</span>,
+            <span class="str">"input"</span>: <span class="kw">null</span>
+        }
+    ]
+}</code></pre>
+
+<div class="callout info">
+  <div class="tag">Note</div>
+  For 422 errors, <code>detail</code> is an <strong>array</strong> of error objects. Each has <code>loc</code>, <code>msg</code>, and <code>type</code>.
+</div>
+
+<h3>500 &mdash; Internal Server Error</h3>
+<pre><code><span class="cmt">// CUDA OOM</span>
+{<span class="str">"detail"</span>: <span class="str">"Transcription failed: CUDA out of memory. Tried to allocate 512.00 MiB..."</span>}
+
+<span class="cmt">// Translate on an .en / Distil model</span>
+{<span class="str">"detail"</span>: <span class="str">"Transcription failed: This model is English-only and does not support translation."</span>}</code></pre>
+
+<h3>503 &mdash; Service Unavailable</h3>
+<pre><code>{<span class="str">"detail"</span>: <span class="str">"Server shutting down"</span>}</code></pre>
+
+<h3>Robust Error Handling Pattern</h3>
+
+<pre><code><span class="kw">import</span> requests
+
+<span class="kw">def</span> <span class="fn">transcribe_file</span>(file_path, <span class="op">**</span>settings):
+    <span class="kw">try</span>:
+        <span class="kw">with</span> <span class="fn">open</span>(file_path, <span class="str">"rb"</span>) <span class="kw">as</span> f:
+            r <span class="op">=</span> requests.<span class="fn">post</span>(
+                <span class="str">"http://127.0.0.1:8765/transcribe"</span>,
+                <span class="par">files</span><span class="op">=</span>{<span class="str">"audio"</span>: (file_path, f)},
+                <span class="par">data</span><span class="op">=</span>settings,
+                <span class="par">timeout</span><span class="op">=</span><span class="num">300</span>,
+            )
+    <span class="kw">except</span> requests.ConnectionError:
+        <span class="fn">print</span>(<span class="str">"Cannot connect &mdash; is the server running?"</span>)
+        <span class="kw">return</span> <span class="kw">None</span>
+    <span class="kw">except</span> requests.Timeout:
+        <span class="fn">print</span>(<span class="str">"Request timed out"</span>)
+        <span class="kw">return</span> <span class="kw">None</span>
+
+    <span class="kw">if</span> r.status_code <span class="op">==</span> <span class="num">200</span>:
+        <span class="kw">return</span> r.<span class="fn">json</span>()
+
+    error <span class="op">=</span> r.<span class="fn">json</span>()
+    detail <span class="op">=</span> error.<span class="fn">get</span>(<span class="str">"detail"</span>, <span class="str">"Unknown error"</span>)
+
+    <span class="kw">if</span> r.status_code <span class="op">==</span> <span class="num">400</span>:
+        <span class="fn">print</span>(<span class="str">f"Bad request: </span>{detail}<span class="str">"</span>)
+    <span class="kw">elif</span> r.status_code <span class="op">==</span> <span class="num">422</span>:
+        <span class="kw">for</span> err <span class="kw">in</span> detail:
+            <span class="fn">print</span>(<span class="str">f"Validation error at </span>{err[<span class="str">'loc'</span>]}<span class="str">: </span>{err[<span class="str">'msg'</span>]}<span class="str">"</span>)
+    <span class="kw">elif</span> r.status_code <span class="op">==</span> <span class="num">500</span>:
+        <span class="fn">print</span>(<span class="str">f"Server error: </span>{detail}<span class="str">"</span>)
+    <span class="kw">elif</span> r.status_code <span class="op">==</span> <span class="num">503</span>:
+        <span class="fn">print</span>(<span class="str">"Server is shutting down, try again later"</span>)
+
+    <span class="kw">return</span> <span class="kw">None</span>
+
+result <span class="op">=</span> <span class="fn">transcribe_file</span>(<span class="str">"meeting.mp3"</span>, <span class="par">model</span><span class="op">=</span><span class="str">"large-v3"</span>, <span class="par">language</span><span class="op">=</span><span class="str">"en"</span>)
+<span class="kw">if</span> result:
+    <span class="fn">print</span>(result[<span class="str">"text"</span>])</code></pre>
+
+<h3>Quick Reference</h3>
+<table>
+  <thead>
+    <tr><th>Code</th><th><code>detail</code> Type</th><th>Meaning</th><th>What To Do</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>200</code></td><td>&mdash;</td><td>Success</td><td>Use <code>result["text"]</code> and <code>result["segments"]</code></td></tr>
+    <tr><td><code>400</code></td><td>string</td><td>Bad input</td><td>Fix model, language, task, or audio</td></tr>
+    <tr><td><code>422</code></td><td>array</td><td>Missing field</td><td>Check that <code>audio</code> is included</td></tr>
+    <tr><td><code>500</code></td><td>string</td><td>Model error</td><td>Check VRAM, language/model compatibility</td></tr>
+    <tr><td><code>503</code></td><td>string</td><td>Server stopping</td><td>Wait and retry</td></tr>
+  </tbody>
+</table>
+</section>
+
+<section id="full-example">
+<h2>12. Complete Example</h2>
+
+<p>A full script that transcribes all <code>.mp3</code> files in a folder:</p>
+
+<pre><code><span class="kw">import</span> requests
+<span class="kw">from</span> pathlib <span class="kw">import</span> Path
+
+SERVER <span class="op">=</span> <span class="str">"http://127.0.0.1:8765"</span>
+AUDIO_DIR <span class="op">=</span> Path(<span class="str">"./my_audio_files"</span>)
+
+<span class="cmt"># Check server is running</span>
+health <span class="op">=</span> requests.<span class="fn">get</span>(<span class="str">f"</span>{SERVER}<span class="str">/health"</span>)
+<span class="kw">if</span> health.status_code <span class="op">!=</span> <span class="num">200</span>:
+    <span class="fn">print</span>(<span class="str">"Server is not running!"</span>)
+    <span class="fn">exit</span>(<span class="num">1</span>)
+
+<span class="kw">for</span> audio_file <span class="kw">in</span> <span class="fn">sorted</span>(AUDIO_DIR.<span class="fn">glob</span>(<span class="str">"*.mp3"</span>)):
+    <span class="fn">print</span>(<span class="str">f"Transcribing: </span>{audio_file.name}<span class="str">..."</span>, <span class="par">end</span><span class="op">=</span><span class="str">" "</span>, <span class="par">flush</span><span class="op">=</span><span class="kw">True</span>)
+
+    <span class="kw">with</span> <span class="fn">open</span>(audio_file, <span class="str">"rb"</span>) <span class="kw">as</span> f:
+        response <span class="op">=</span> requests.<span class="fn">post</span>(
+            <span class="str">f"</span>{SERVER}<span class="str">/transcribe"</span>,
+            <span class="par">files</span><span class="op">=</span>{<span class="str">"audio"</span>: (audio_file.name, f, <span class="str">"audio/mpeg"</span>)},
+            <span class="par">data</span><span class="op">=</span>{<span class="str">"language"</span>: <span class="str">"en"</span>, <span class="str">"beam_size"</span>: <span class="str">"5"</span>},
+        )
+
+    <span class="kw">if</span> response.status_code <span class="op">==</span> <span class="num">200</span>:
+        result <span class="op">=</span> response.<span class="fn">json</span>()
+        text <span class="op">=</span> result[<span class="str">"text"</span>]
+        duration <span class="op">=</span> result[<span class="str">"duration"</span>]
+        speed <span class="op">=</span> result[<span class="str">"processing_time_seconds"</span>]
+
+        output_file <span class="op">=</span> audio_file.<span class="fn">with_suffix</span>(<span class="str">".txt"</span>)
+        output_file.<span class="fn">write_text</span>(text, <span class="par">encoding</span><span class="op">=</span><span class="str">"utf-8"</span>)
+        <span class="fn">print</span>(<span class="str">f"Done (</span>{duration:<span class="num">.1f</span>}<span class="str">s audio in </span>{speed:<span class="num">.1f</span>}<span class="str">s)"</span>)
+    <span class="kw">else</span>:
+        <span class="fn">print</span>(<span class="str">f"Failed: </span>{response.<span class="fn">json</span>().<span class="fn">get</span>(<span class="str">'detail'</span>, <span class="str">'Unknown error'</span>)}<span class="str">"</span>)</code></pre>
+</section>
+
+<hr>
+<p style="text-align:center; color:var(--text-dim); font-size:0.85rem; margin-top:2rem;">
+  Faster-Whisper Transcriber &mdash; Server API Guide
+</p>
+
+<script>
+const PLAIN_TEXT = `Faster-Whisper Transcriber - Server API Guide
+===============================================
+
+## 1. Starting the Server
+
+1. Launch the Faster-Whisper Transcriber GUI.
+2. Click the Settings (gear) icon.
+3. In the Server Mode group box, flip the toggle from Off to On and set the Port (default: 8765).
+4. Click Update Settings.
+5. The status bar shows "... | server: on (8765)" and the voice recorder is disabled while running.
+
+The server binds to 0.0.0.0, so it is accessible at http://127.0.0.1:8765 locally and at http://<your-ip>:8765 from other machines on your network.
+
+This backend uses the faster-whisper library, which exposes the standard Whisper knobs (beam_size, vad_filter, condition_on_previous_text, word_timestamps, temperature, ...). The server surfaces the ones that matter for integration.
+
+## 2. Endpoints
+
+| Endpoint         | Method | Description                                              |
+|------------------|--------|----------------------------------------------------------|
+| /health          | GET    | Check if the server is running                           |
+| /status          | GET    | Server status, queue depth, whether transcription active |
+| /models          | GET    | List all models and whether they support translation     |
+| /transcribe      | POST   | Transcribe audio from a file upload (multipart form)     |
+| /transcribe/raw  | POST   | Transcribe audio from base64-encoded data (JSON body)    |
+
+Interactive docs: http://127.0.0.1:8765/docs (Swagger) and http://127.0.0.1:8765/redoc (ReDoc)
+
+## 3. Quick Start
+
+\`\`\`python
+import requests
+
+response = requests.post(
+    "http://127.0.0.1:8765/transcribe",
+    files={"audio": open("my_audio.mp3", "rb")},
+)
+
+print(response.json()["text"])
+\`\`\`
+
+The server uses whatever model, quantization, task, and whisper params were configured in the GUI. Language defaults to auto-detect.
+
+## 4. Accepted Audio Input Formats
+
+### 4a. Audio Files (most common)
+Supported: .mp3, .wav, .flac, .m4a, .ogg, .aac, .wma, .webm, .mp4, .mkv, .avi, .asf, .amr
+
+\`\`\`python
+with open("recording.wav", "rb") as f:
+    r = requests.post(
+        "http://127.0.0.1:8765/transcribe",
+        files={"audio": ("recording.wav", f, "audio/wav")},
+    )
+\`\`\`
+
+### 4b. NumPy Arrays
+Serialize with np.save() and upload the .npy file. Pass sample_rate if different from 16000.
+
+### 4c. PyTorch Tensors
+Serialize with torch.save() and upload the .pt file.
+
+### 4d. Raw PCM Bytes
+\`\`\`python
+data = {"audio_format": "pcm", "sample_rate": "16000", "dtype": "float32"}
+# dtype also supports: int16, int32, float64
+\`\`\`
+
+### 4e. Base64-Encoded Data (JSON endpoint /transcribe/raw)
+\`\`\`python
+r = requests.post(
+    "http://127.0.0.1:8765/transcribe/raw",
+    json={"audio_data": b64_string, "audio_format": "numpy", "sample_rate": 16000},
+)
+\`\`\`
+
+## 5. Settings You Can Control
+
+Every setting is optional.
+
+| Parameter                  | Type    | Description                                                                                                                       | Values                                                                 |
+|----------------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------|
+| model                      | string  | Whisper checkpoint name                                                                                                           | "tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium",   |
+|                            |         |                                                                                                                                   | "medium.en", "large-v3", "large-v3-turbo", "distil-whisper-large-v3",  |
+|                            |         |                                                                                                                                   | "distil-whisper-medium.en", "distil-whisper-small.en"                  |
+| quantization               | string  | CTranslate2 compute_type                                                                                                          | "float32", "float16", "bfloat16", "int8", "int8_float16", ...          |
+| device                     | string  | CPU or GPU                                                                                                                        | "cuda", "cpu"                                                          |
+| language                   | string  | ISO 639-1 code. Omit or empty to auto-detect.                                                                                     | "en", "fr", "es", "de", "zh", ... (99 Whisper languages)               |
+| task_mode                  | string  | Transcribe or translate to English                                                                                                | "transcribe", "translate"                                              |
+| include_timestamps         | bool    | Include segments with start/end times. False -> segments: []                                                                      | "true", "false"                                                        |
+| word_timestamps            | bool    | Forwarded to faster-whisper (word-level timings inside segments)                                                                  | "true", "false"                                                        |
+| beam_size                  | int     | Decoding beam width                                                                                                               | 1-20 (default 5)                                                       |
+| vad_filter                 | bool    | Silero VAD preprocessing. Forced on when batch_size > 1.                                                                          | "true", "false"                                                        |
+| condition_on_previous_text | bool    | Use previous segment output as context                                                                                            | "true", "false"                                                        |
+| batch_size                 | int     | >1 uses BatchedInferencePipeline with tuned VAD                                                                                   | 1-128 (default 1)                                                      |
+| audio_format               | string  | Override input format auto-detection                                                                                              | "auto", "file", "numpy", "tensor", "pcm"                               |
+| sample_rate                | int     | Sample rate of raw audio input                                                                                                    | "16000", "22050", "44100", "48000"                                     |
+| dtype                      | string  | Data type for raw PCM input                                                                                                       | "float32", "float64", "int16", "int32"                                 |
+
+Important: When batch_size > 1 the server forces vad_filter=true and applies tuned VAD parameters required by BatchedInferencePipeline. You cannot disable VAD while batching.
+
+### Example with Custom Settings
+
+\`\`\`python
+with open("lecture.mp3", "rb") as f:
+    r = requests.post(
+        "http://127.0.0.1:8765/transcribe",
+        files={"audio": ("lecture.mp3", f, "audio/mpeg")},
+        data={
+            "model": "large-v3",
+            "quantization": "float16",
+            "device": "cuda",
+            "task_mode": "transcribe",
+            "language": "en",
+            "include_timestamps": "true",
+            "beam_size": "5",
+            "vad_filter": "true",
+            "batch_size": "8",
+        },
+    )
+\`\`\`
+
+## 6. Response Format
+
+### 6a. Plain text (include_timestamps=false)
+\`\`\`json
+{
+    "text": "Good morning everyone...",
+    "segments": [],
+    "language": "en",
+    "duration": 138.135,
+    "task": "transcribe",
+    "model_used": "large-v3 - float16",
+    "processing_time_seconds": 2.418
+}
+\`\`\`
+
+### 6b. With timestamps (include_timestamps=true)
+\`\`\`json
+{
+    "text": "Good morning everyone. Today we'll be discussing...",
+    "segments": [
+        {"start": 0.081, "end": 4.862, "text": " Good morning everyone. Today we'll be discussing"},
+        {"start": 4.862, "end": 8.241, "text": " the quarterly results..."}
+    ],
+    "language": "en",
+    "duration": 138.135,
+    "task": "transcribe",
+    "model_used": "large-v3 - float16",
+    "processing_time_seconds": 3.012
+}
+\`\`\`
+
+### 6c. Field Reference
+
+| Field                   | Type   | Always | Description                                           |
+|-------------------------|--------|--------|-------------------------------------------------------|
+| text                    | string | Yes    | Full transcription as newline-joined string           |
+| segments                | array  | Yes    | Whisper segments. Empty [] when timestamps off.       |
+| segments[].start        | float  | -      | Segment start time in seconds                         |
+| segments[].end          | float  | -      | Segment end time in seconds                           |
+| segments[].text         | string | -      | Transcribed text (faster-whisper leaves leading space)|
+| language                | string | Yes    | Detected or echoed ISO code                           |
+| duration                | float  | Yes    | Duration of processed audio in seconds                |
+| task                    | string | Yes    | "transcribe" or "translate"                           |
+| model_used              | string | Yes    | Full model key, e.g. "large-v3 - float16"            |
+| processing_time_seconds | float  | Yes    | How long the transcription took                       |
+
+## 7. Model Notes
+
+Uses faster-whisper with CTranslate2-converted checkpoints from HuggingFace under ctranslate2-4you/whisper-<model>-ct2-<quantization> (or distil-whisper-<model>-ct2-<quantization> for Distil variants).
+
+| Model family                                 | English-only | Translation | Notes                                        |
+|----------------------------------------------|--------------|-------------|----------------------------------------------|
+| large-v3 / large-v3-turbo                    | No           | Yes         | Multilingual; turbo has fewer decoder layers |
+| medium / small / base / tiny                 | No           | Yes         | Multilingual; smaller = faster               |
+| medium.en / small.en / base.en / tiny.en     | Yes          | No          | English-only; pass language="en"             |
+| distil-whisper-large-v3 / medium.en / small.en | Varies     | No          | Distilled variants: faster, English-focused  |
+
+Important: .en models and all Distil variants DO NOT support translation. Requesting task_mode="translate" on one returns HTTP 500.
+
+## 8. Checking Server Status
+
+### Health Check
+\`\`\`python
+r = requests.get("http://127.0.0.1:8765/health")  # -> {"status": "ok"}
+\`\`\`
+
+### Server Status
+\`\`\`python
+status = requests.get("http://127.0.0.1:8765/status").json()
+# -> {"server_running": true, "queue_depth": 0, "transcription_active": false}
+\`\`\`
+
+### List Models
+\`\`\`python
+models = requests.get("http://127.0.0.1:8765/models").json()
+# keyed by model name: {"large-v3": {"name": "large-v3", "supports_translation": true}, ...}
+\`\`\`
+
+Note: Unlike the WhisperS2T sister project, this /models endpoint returns one entry per base model name, not per (name, quantization) pair. Use the quantization parameter on /transcribe to pick precision.
+
+## 9. Request Queuing
+
+The server processes one transcription at a time. Multiple concurrent requests are queued and served in order; each client blocks on its own result.
+
+## 10. Using curl
+
+\`\`\`bash
+curl http://127.0.0.1:8765/health
+curl -F "audio=@my_audio.mp3" http://127.0.0.1:8765/transcribe
+curl -F "audio=@my_audio.mp3" \\
+     -F "model=large-v3" \\
+     -F "quantization=float16" \\
+     -F "task_mode=transcribe" \\
+     -F "language=en" \\
+     -F "include_timestamps=true" \\
+     -F "beam_size=5" \\
+     http://127.0.0.1:8765/transcribe
+\`\`\`
+
+## 11. Error Handling
+
+| Code | detail Type | Meaning      | What To Do                                        |
+|------|-------------|--------------|---------------------------------------------------|
+| 200  | -           | Success      | Use result["text"] and result["segments"]         |
+| 400  | string      | Bad input    | Fix model, language, task, or audio               |
+| 422  | array       | Missing field| Check that audio is included                      |
+| 500  | string      | Model error  | Check VRAM or model/task compatibility            |
+| 503  | string      | Server stop  | Wait and retry                                    |
+
+## 12. Complete Example
+
+\`\`\`python
+import requests
+from pathlib import Path
+
+SERVER = "http://127.0.0.1:8765"
+AUDIO_DIR = Path("./my_audio_files")
+
+if requests.get(f"{SERVER}/health").status_code != 200:
+    print("Server is not running!")
+    exit(1)
+
+for audio_file in sorted(AUDIO_DIR.glob("*.mp3")):
+    print(f"Transcribing: {audio_file.name}...", end=" ", flush=True)
+    with open(audio_file, "rb") as f:
+        r = requests.post(
+            f"{SERVER}/transcribe",
+            files={"audio": (audio_file.name, f, "audio/mpeg")},
+            data={"language": "en", "beam_size": "5"},
+        )
+    if r.status_code == 200:
+        result = r.json()
+        output_file = audio_file.with_suffix(".txt")
+        output_file.write_text(result["text"], encoding="utf-8")
+        print(f"Done ({result['duration']:.1f}s audio in {result['processing_time_seconds']:.1f}s)")
+    else:
+        print(f"Failed: {r.json().get('detail', 'Unknown error')}")
+\`\`\`
+`;
+
+function copyPlainText(btn) {
+  var ta = document.createElement('textarea');
+  ta.value = PLAIN_TEXT;
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  document.execCommand('copy');
+  document.body.removeChild(ta);
+
+  btn.classList.add('copied');
+  btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z"/></svg> Copied!';
+  setTimeout(function() {
+    btn.classList.remove('copied');
+    btn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg> Copy as Text (for LLMs)';
+  }, 2000);
+}
+</script>
+
+</body>
+</html>

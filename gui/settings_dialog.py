@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from PySide6.QtCore import Signal
+from pathlib import Path
+
+from PySide6.QtCore import QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
     QVBoxLayout,
@@ -217,6 +220,17 @@ class SettingsDialog(QDialog):
         self._file_types_btn.setToolTip("Configure which audio/video file types to include in batch processing")
         self._file_types_btn.clicked.connect(self._open_file_types_dialog)
         file_types_row.addWidget(self._file_types_btn)
+
+        self._guide_btn = QPushButton("Guide")
+        self._guide_btn.setFixedHeight(28)
+        self._guide_btn.setFixedWidth(100)
+        self._guide_btn.setToolTip(
+            "<qt>Open the HTML user guide for the<br>"
+            "Server API in your default browser.</qt>"
+        )
+        self._guide_btn.clicked.connect(self._open_server_guide)
+        file_types_row.addWidget(self._guide_btn)
+
         right_column.addLayout(file_types_row)
 
         right_column.addStretch(1)
@@ -426,6 +440,13 @@ class SettingsDialog(QDialog):
         if dlg.exec() == QDialog.Accepted:
             self._ext_checked = dlg.get_checked()
             self.file_types_changed.emit(self._ext_checked)
+
+    def _open_server_guide(self) -> None:
+        guide_path = Path(__file__).parent.parent / "guides" / "SERVER_API_GUIDE.html"
+        if not guide_path.is_file():
+            logger.warning(f"Guide not found at {guide_path}")
+            return
+        QDesktopServices.openUrl(QUrl.fromLocalFile(str(guide_path.resolve())))
 
     def _on_update_clicked(self) -> None:
         if self._server_settings_selection_changed():
