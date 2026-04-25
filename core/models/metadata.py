@@ -21,6 +21,7 @@ class ModelMetadata:
         ModelInfo("medium.en", False),
         ModelInfo("large-v3", True),
         ModelInfo("large-v3-turbo", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}),
+        ModelInfo("parakeet-tdt-0.6b-v3-onnx", False, {"cpu": ["onnx"], "cuda": ["onnx"]}),
         ModelInfo("distil-whisper-small.en", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}),
         ModelInfo("distil-whisper-medium.en", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}),
         ModelInfo("distil-whisper-large-v3", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}),
@@ -48,7 +49,7 @@ class ModelMetadata:
 
         if info and info.quantization_overrides:
             options = info.quantization_overrides.get(device, [])
-            options = [opt for opt in options if opt in hw_supported]
+            options = [opt for opt in options if opt == "onnx" or opt in hw_supported]
         else:
             options = supported_quantizations.get(device, [])
 

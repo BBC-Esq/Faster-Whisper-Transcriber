@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from PySide6.QtCore import QUrl, Signal
+from PySide6.QtCore import Qt, QUrl, Signal
 from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import (
     QDialog,
@@ -16,6 +16,10 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QLabel,
     QSpinBox,
+    QLineEdit,
+    QMessageBox,
+    QApplication,
+    QDialogButtonBox,
 )
 
 from core.models.metadata import ModelMetadata
@@ -27,11 +31,189 @@ from core.logging_config import get_logger
 logger = get_logger(__name__)
 
 
+class SpeakerLabelsDialog(QDialog):
+    def __init__(self, parent: QWidget | None, labels: list[str]):
+        super().__init__(parent)
+        self.setWindowTitle("Speaker Labels")
+        self.setModal(True)
+        self.setMinimumWidth(400)
+        self._defaults = ["Lawyer", "Client"]
+        self._labels = list(labels or self._defaults)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        self._count_spin = QSpinBox()
+        self._count_spin.setRange(2, 8)
+        self._count_spin.setValue(max(2, min(8, len(self._labels))))
+        self._count_spin.valueChanged.connect(self._refresh_visible_rows)
+
+        form = QFormLayout()
+        form.addRow("Expected Speakers", self._count_spin)
+        self._rows: list[tuple[QLabel, QLineEdit]] = []
+        for idx in range(8):
+            default = self._default_label(idx)
+            value = self._labels[idx] if idx < len(self._labels) else default
+            label = QLabel(f"Speaker {idx + 1}")
+            edit = QLineEdit(value)
+            form.addRow(label, edit)
+            self._rows.append((label, edit))
+        layout.addLayout(form)
+        self._refresh_visible_rows()
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def get_labels(self) -> list[str]:
+        labels = []
+        for idx, (_, edit) in enumerate(self._rows[: self._count_spin.value()]):
+            labels.append(edit.text().strip() or self._default_label(idx))
+        return labels
+
+    def _refresh_visible_rows(self) -> None:
+        count = self._count_spin.value()
+        for idx, (label, edit) in enumerate(self._rows):
+            visible = idx < count
+            label.setVisible(visible)
+            edit.setVisible(visible)
+
+    def _default_label(self, idx: int) -> str:
+        if idx < len(self._defaults):
+            return self._defaults[idx]
+        return f"Speaker {idx + 1}"
+
+
+class VoiceEnrollmentDialog(QDialog):
+    _PROFILE_KEY = "speaker_1"
+
+    def __init__(
+        self,
+        parent: QWidget | None,
+        labels: list[str],
+        profiles: dict,
+        device_provider,
+    ):
+        super().__init__(parent)
+        self.setWindowTitle("Voice Enrollment")
+        self.setModal(True)
+        self.setMinimumWidth(460)
+
+        self._labels = labels
+        self._profiles = {
+            key: list(value)
+            for key, value in (profiles or {}).items()
+            if key == self._PROFILE_KEY and isinstance(value, list)
+        }
+        self._device_provider = device_provider
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
+
+        hint = QLabel(
+            "Record 5-6 seconds of your voice. The app uses this only when it is a confident match."
+        )
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        row = QHBoxLayout()
+        record_btn = QPushButton("Record")
+        record_btn.clicked.connect(self._record_profile)
+        row.addWidget(record_btn)
+
+        clear_btn = QPushButton("Clear")
+        clear_btn.clicked.connect(self._clear_profile)
+        row.addWidget(clear_btn)
+
+        self._status_label = QLabel()
+        row.addWidget(self._status_label, 1)
+        layout.addLayout(row)
+
+        self._refresh_status()
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok)
+        buttons.accepted.connect(self.accept)
+        layout.addWidget(buttons)
+
+    def get_profiles(self) -> dict:
+        return dict(self._profiles)
+
+    def _refresh_status(self) -> None:
+        self._status_label.setText(
+            "Enrolled" if self._PROFILE_KEY in self._profiles else "No sample"
+        )
+
+    def _clear_profile(self) -> None:
+        self._profiles.pop(self._PROFILE_KEY, None)
+        self._refresh_status()
+
+    def _record_profile(self) -> None:
+        QMessageBox.information(
+            self,
+            "Voice Enrollment",
+            "After you click OK, speak naturally for about 6 seconds.",
+        )
+
+        try:
+            import numpy as np
+            import sounddevice as sd
+            from core.transcription.client_call import build_voice_profile_from_samples
+
+            device_id = self._device_provider()
+            sample_rate = self._choose_sample_rate(sd, device_id)
+            frames = int(sample_rate * 6)
+
+            QApplication.setOverrideCursor(Qt.WaitCursor)
+            cursor_set = True
+            QApplication.processEvents()
+            recording = sd.rec(
+                frames,
+                samplerate=sample_rate,
+                channels=1,
+                dtype="float32",
+                device=device_id,
+            )
+            sd.wait()
+            samples = np.asarray(recording).reshape(-1)
+            self._profiles[self._PROFILE_KEY] = build_voice_profile_from_samples(
+                samples, sample_rate
+            )
+            self._refresh_status()
+            QMessageBox.information(self, "Voice Enrollment", "Saved your voice sample.")
+        except Exception as e:
+            logger.exception("Voice enrollment failed")
+            QMessageBox.warning(
+                self, "Voice Enrollment", f"Could not save voice sample:\n{e}"
+            )
+        finally:
+            if "cursor_set" in locals():
+                QApplication.restoreOverrideCursor()
+
+    @staticmethod
+    def _choose_sample_rate(sd, device_id: int | None) -> int:
+        for sample_rate in (16000, 44100, 48000):
+            try:
+                sd.check_input_settings(
+                    device=device_id,
+                    samplerate=sample_rate,
+                    channels=1,
+                    dtype="float32",
+                )
+                return sample_rate
+            except Exception:
+                continue
+        return 44100
+
+
 class SettingsDialog(QDialog):
     model_update_requested = Signal(str, str, str)
     audio_device_changed = Signal(str, str)
     task_mode_changed = Signal(str)
     whisper_settings_changed = Signal(object)
+    speaker_settings_changed = Signal(object)
     server_mode_changed = Signal(bool, int)
 
     file_types_changed = Signal(object)
@@ -45,6 +227,8 @@ class SettingsDialog(QDialog):
         current_task_mode: str = "transcribe",
         current_audio_device: dict[str, str] | None = None,
         current_whisper_settings: dict | None = None,
+        current_speaker_labels: list[str] | None = None,
+        current_speaker_profiles: dict | None = None,
         current_ext_checked: dict[str, bool] | None = None,
         current_server_settings: dict | None = None,
         is_busy_check=None,
@@ -67,6 +251,14 @@ class SettingsDialog(QDialog):
             "vad_filter": True,
             "condition_on_previous_text": False,
         }
+        self.current_speaker_labels = list(
+            current_speaker_labels or ["Lawyer", "Client"]
+        )
+        while len(self.current_speaker_labels) < 2:
+            self.current_speaker_labels.append(
+                ["Lawyer", "Client"][len(self.current_speaker_labels)]
+            )
+        self.current_speaker_profiles = dict(current_speaker_profiles or {})
         self.current_server_settings = current_server_settings or {
             "server_mode_enabled": False,
             "server_port": 8765,
@@ -94,7 +286,7 @@ class SettingsDialog(QDialog):
         left_column = QVBoxLayout()
         left_column.setSpacing(12)
 
-        model_group = QGroupBox("Whisper Model")
+        model_group = QGroupBox("Speech Model")
         model_form = QFormLayout(model_group)
         model_form.setHorizontalSpacing(12)
         model_form.setVerticalSpacing(10)
@@ -174,6 +366,24 @@ class SettingsDialog(QDialog):
         whisper_form.addRow("Condition on Previous", self.condition_on_previous_cb)
 
         right_column.addWidget(whisper_group)
+
+        speaker_group = QGroupBox("Speaker Labels")
+        speaker_layout = QHBoxLayout(speaker_group)
+        speaker_layout.setSpacing(8)
+
+        self._speaker_labels_btn = QPushButton("Speaker Labels...")
+        self._speaker_labels_btn.setFixedHeight(28)
+        self._speaker_labels_btn.clicked.connect(self._open_speaker_labels_dialog)
+        speaker_layout.addWidget(self._speaker_labels_btn)
+
+        self._voice_enrollment_btn = QPushButton("Voice Enrollment...")
+        self._voice_enrollment_btn.setFixedHeight(28)
+        self._voice_enrollment_btn.clicked.connect(
+            self._open_voice_enrollment_dialog
+        )
+        speaker_layout.addWidget(self._voice_enrollment_btn)
+
+        right_column.addWidget(speaker_group)
 
         server_group = QGroupBox("Server Mode")
         server_vbox = QVBoxLayout(server_group)
@@ -414,6 +624,8 @@ class SettingsDialog(QDialog):
             self.beam_size_spin,
             self.vad_filter_cb,
             self.condition_on_previous_cb,
+            self._speaker_labels_btn,
+            self._voice_enrollment_btn,
         ]
         for w in locked_widgets:
             w.setEnabled(not server_on)
@@ -434,6 +646,35 @@ class SettingsDialog(QDialog):
         else:
             self.update_btn.setText("Update Settings")
         update_button_property(self.update_btn, "changed", has_changes)
+
+    def _open_speaker_labels_dialog(self) -> None:
+        dlg = SpeakerLabelsDialog(self, self.current_speaker_labels)
+        if dlg.exec() == QDialog.Accepted:
+            self.current_speaker_labels = dlg.get_labels()
+            self.speaker_settings_changed.emit({
+                "speaker_labels": self.current_speaker_labels,
+                "speaker_voice_profiles": self.current_speaker_profiles,
+            })
+
+    def _open_voice_enrollment_dialog(self) -> None:
+        dlg = VoiceEnrollmentDialog(
+            self,
+            self.current_speaker_labels,
+            self.current_speaker_profiles,
+            self._selected_audio_device_id,
+        )
+        if dlg.exec() == QDialog.Accepted:
+            self.current_speaker_profiles = dlg.get_profiles()
+            self.speaker_settings_changed.emit({
+                "speaker_labels": self.current_speaker_labels,
+                "speaker_voice_profiles": self.current_speaker_profiles,
+            })
+
+    def _selected_audio_device_id(self) -> int | None:
+        data = self.audio_device_dropdown.currentData()
+        if isinstance(data, dict):
+            return data.get("id")
+        return None
 
     def _open_file_types_dialog(self) -> None:
         dlg = FileTypesDialog(self, self._ext_checked)

@@ -22,9 +22,9 @@ class ConfigManager:
         "task_modes": {"transcribe", "translate"},
         "quantization_types": {
             "int8", "int8_float16", "int8_float32", "int8_bfloat16",
-            "int16", "float16", "float32", "bfloat16"
+            "int16", "float16", "float32", "bfloat16", "onnx"
         },
-        "output_formats": {"txt", "srt", "vtt", "json"},
+        "output_formats": {"txt", "srt", "vtt", "tsv", "json"},
         "single_file_output_modes": {
             "clipboard", "save_to_source", "save_and_clipboard", "save_to_custom"
         },
@@ -39,6 +39,10 @@ class ConfigManager:
         "supported_quantizations": {"cpu": [], "cuda": []},
         "curate_transcription": True,
         "clipboard_append_mode": False,
+        "client_call_mode": False,
+        "speaker_labels": ["Lawyer", "Client"],
+        "speaker_voice_profiles": {},
+        "include_timestamps": False,
         "without_timestamps": True,
         "word_timestamps": False,
         "beam_size": 5,
@@ -64,6 +68,10 @@ class ConfigManager:
         "show_clipboard_window": {"type": bool},
         "curate_transcription": {"type": bool},
         "clipboard_append_mode": {"type": bool},
+        "client_call_mode": {"type": bool},
+        "speaker_labels": {"type": list, "validator": "_validate_speaker_labels"},
+        "speaker_voice_profiles": {"type": dict, "validator": "_validate_voice_profiles"},
+        "include_timestamps": {"type": bool},
         "without_timestamps": {"type": bool},
         "word_timestamps": {"type": bool},
         "beam_size": {"type": int, "validator": "_validate_beam_size"},
@@ -151,6 +159,49 @@ class ConfigManager:
         if isinstance(value, int) and 1 <= value <= 20:
             return value
         return self.DEFAULT_CONFIG["beam_size"]
+
+    def _validate_speaker_labels(self, value: Any) -> list[str]:
+        if not isinstance(value, list):
+            return copy.deepcopy(self.DEFAULT_CONFIG["speaker_labels"])
+
+        labels = []
+        for item in value[:8]:
+            label = str(item).strip() if item is not None else ""
+            labels.append(label)
+
+        defaults = self.DEFAULT_CONFIG["speaker_labels"]
+        while len(labels) < 2:
+            labels.append(defaults[len(labels)])
+
+        cleaned = []
+        for idx, label in enumerate(labels):
+            if label:
+                cleaned.append(label)
+            elif idx < len(defaults):
+                cleaned.append(defaults[idx])
+            else:
+                cleaned.append(f"Speaker {idx + 1}")
+        return cleaned
+
+    def _validate_voice_profiles(self, value: Any) -> dict[str, list[float]]:
+        if not isinstance(value, dict):
+            return {}
+
+        cleaned: dict[str, list[float]] = {}
+        for key in ("speaker_1",):
+            raw_profile = value.get(key)
+            if not isinstance(raw_profile, list):
+                continue
+            profile = []
+            for item in raw_profile:
+                try:
+                    profile.append(float(item))
+                except (TypeError, ValueError):
+                    profile = []
+                    break
+            if profile:
+                cleaned[key] = profile
+        return cleaned
 
     def _validate_port(self, value: Any) -> int:
         if isinstance(value, int) and 1024 <= value <= 65535:

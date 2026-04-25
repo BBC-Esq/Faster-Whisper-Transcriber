@@ -7,6 +7,10 @@ from faster_whisper import BatchedInferencePipeline
 from PySide6.QtCore import QThread, Signal, QElapsedTimer
 
 from core.output.writers import SegmentData, TranscriptionResult, write_output
+from core.transcription.client_call import (
+    apply_client_call_speakers,
+    format_client_call_transcript,
+)
 from core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -73,16 +77,36 @@ class BatchProcessor(QThread):
         seen_names: dict[str, int] = {}
 
         try:
-            batched_model = BatchedInferencePipeline(model=self.model)
+            use_batched_pipeline = not getattr(self.model, "expects_file_path", False)
+            logger.info(
+                "Batch transcription engine: "
+                f"{getattr(self.model, 'engine_name', type(self.model).__name__)}"
+            )
+            batched_model = (
+                BatchedInferencePipeline(model=self.model)
+                if use_batched_pipeline
+                else self.model
+            )
             total_files = len(self.files)
 
+            client_call_mode = self.whisper_params.get("client_call_mode", False)
             extra_kwargs = {
-                "without_timestamps": self.whisper_params.get("without_timestamps", True),
+                "without_timestamps": False if client_call_mode else self.whisper_params.get("without_timestamps", True),
                 "word_timestamps": self.whisper_params.get("word_timestamps", False),
                 "beam_size": self.whisper_params.get("beam_size", 5),
                 "vad_filter": self.whisper_params.get("vad_filter", True),
                 "condition_on_previous_text": self.whisper_params.get("condition_on_previous_text", False),
             }
+            if use_batched_pipeline and self.batch_size and int(self.batch_size) > 1:
+                extra_kwargs["vad_filter"] = True
+                extra_kwargs["vad_parameters"] = dict(
+                    threshold=0.0008,
+                    neg_threshold=0.0001,
+                    min_speech_duration_ms=500,
+                    max_speech_duration_s=30,
+                    min_silence_duration_ms=1000,
+                    speech_pad_ms=500,
+                )
 
             for idx, audio_file in enumerate(self.files, 1):
                 if self.stop_requested.is_set():
@@ -91,13 +115,21 @@ class BatchProcessor(QThread):
                 self.progress.emit(idx, total_files, f"Processing {audio_file.name}")
 
                 try:
-                    segments, info = batched_model.transcribe(
-                        str(audio_file),
-                        language=None,
-                        task=self.task_mode,
-                        batch_size=self.batch_size,
-                        **extra_kwargs,
-                    )
+                    if use_batched_pipeline:
+                        segments, info = batched_model.transcribe(
+                            str(audio_file),
+                            language=None,
+                            task=self.task_mode,
+                            batch_size=self.batch_size,
+                            **extra_kwargs,
+                        )
+                    else:
+                        segments, info = batched_model.transcribe(
+                            str(audio_file),
+                            language=None,
+                            task=self.task_mode,
+                            **extra_kwargs,
+                        )
 
                     segment_list = []
                     text_parts = []
@@ -116,8 +148,25 @@ class BatchProcessor(QThread):
                     if self.stop_requested.is_set():
                         break
 
+                    if client_call_mode:
+                        try:
+                            if apply_client_call_speakers(
+                                audio_file,
+                                segment_list,
+                                labels=self.whisper_params.get("speaker_labels"),
+                                voice_profiles=self.whisper_params.get("speaker_voice_profiles"),
+                            ):
+                                text = format_client_call_transcript(segment_list)
+                            else:
+                                text = "\n".join(text_parts)
+                        except Exception as e:
+                            logger.warning(f"Client call speaker labeling failed: {e}")
+                            text = "\n".join(text_parts)
+                    else:
+                        text = "\n".join(text_parts)
+
                     result = TranscriptionResult(
-                        text="\n".join(text_parts),
+                        text=text,
                         segments=segment_list,
                         language=info.language if info and hasattr(info, "language") else None,
                         duration=info.duration if info and hasattr(info, "duration") else None,

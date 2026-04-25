@@ -14,12 +14,14 @@ class ClipboardSideWindow(QWidget):
     docked_changed = Signal(bool)
     always_on_top_changed = Signal(bool)
     append_mode_changed = Signal(bool)
+    client_call_mode_changed = Signal(bool)
 
     def __init__(self, parent: QWidget | None = None, width: int = 400):
         super().__init__(parent)
 
         self._always_on_top = True
         self._append_mode = False
+        self._client_call_mode = False
         self._docked = True
         self._internal_move = False
         self._internal_move_count = 0
@@ -68,6 +70,14 @@ class ClipboardSideWindow(QWidget):
         self._append_checkbox.toggled.connect(self._on_append_toggled)
         controls.addWidget(self._append_checkbox)
 
+        self._client_call_checkbox = QCheckBox("Speaker Labels")
+        self._client_call_checkbox.setToolTip(
+            "Apply speaker labels to recordings and audio files"
+        )
+        self._client_call_checkbox.setChecked(False)
+        self._client_call_checkbox.toggled.connect(self._on_client_call_toggled)
+        controls.addWidget(self._client_call_checkbox)
+
         self._on_top_checkbox = QCheckBox("Always on Top")
         self._on_top_checkbox.setToolTip("Keep this window above other windows")
         self._on_top_checkbox.setChecked(self._always_on_top)
@@ -83,7 +93,7 @@ class ClipboardSideWindow(QWidget):
 
         layout.addLayout(controls)
 
-        self.setMinimumSize(400, 160)
+        self.setMinimumSize(500, 160)
         self.resize(self._desired_width, self._default_height)
         self.hide()
 
@@ -135,6 +145,20 @@ class ClipboardSideWindow(QWidget):
 
     def is_append_mode(self) -> bool:
         return self._append_mode
+
+    @Slot(bool)
+    def _on_client_call_toggled(self, checked: bool) -> None:
+        self._client_call_mode = checked
+        self.client_call_mode_changed.emit(checked)
+
+    def set_client_call_mode(self, enabled: bool) -> None:
+        self._client_call_mode = enabled
+        self._client_call_checkbox.blockSignals(True)
+        self._client_call_checkbox.setChecked(enabled)
+        self._client_call_checkbox.blockSignals(False)
+
+    def is_client_call_mode(self) -> bool:
+        return self._client_call_mode
 
     def add_transcription(self, text: str) -> None:
         if self._append_mode:

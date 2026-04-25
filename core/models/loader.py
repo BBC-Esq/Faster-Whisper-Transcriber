@@ -5,8 +5,10 @@ import shutil
 import sys
 import threading
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Optional, Callable
 
+import numpy as np
 import psutil
 from faster_whisper import WhisperModel
 from huggingface_hub import HfApi, hf_hub_download, snapshot_download
@@ -16,6 +18,13 @@ from core.logging_config import get_logger
 from core.exceptions import ModelLoadError
 
 logger = get_logger(__name__)
+
+PARAKEET_ONNX_MODEL_NAME = "parakeet-tdt-0.6b-v3-onnx"
+PARAKEET_ONNX_ASR_NAME = "nemo-parakeet-tdt-0.6b-v3"
+
+
+def is_parakeet_onnx_model(model_name: str) -> bool:
+    return model_name == PARAKEET_ONNX_MODEL_NAME
 
 
 class _NullWriter:
@@ -73,6 +82,234 @@ def _make_repo_string(model_name: str, quantization_type: str) -> str:
     if model_name.startswith("distil-whisper"):
         return f"ctranslate2-4you/{model_name}-ct2-{quantization_type}"
     return f"ctranslate2-4you/whisper-{model_name}-ct2-{quantization_type}"
+
+
+class ParakeetOnnxModel:
+    expects_file_path = True
+
+    def __init__(self, text_model, segment_model=None, providers: list[str] | None = None) -> None:
+        self._text_model = text_model
+        self._timestamp_model = text_model.with_timestamps()
+        self._segment_model = segment_model
+        self.provider_names = list(providers or [])
+        self.engine_name = "Parakeet ONNX"
+        self.sample_rate = 16000
+
+    def transcribe(
+        self,
+        audio_input,
+        language=None,
+        task: str = "transcribe",
+        **_kwargs,
+    ):
+        if task == "translate":
+            raise ModelLoadError("Parakeet ONNX supports transcription only")
+
+        audio = self._load_audio(audio_input)
+        duration = float(audio.shape[0] / self.sample_rate) if audio.size else 0.0
+
+        if self._segment_model is not None:
+            try:
+                segments = self._recognize_vad_segments(audio)
+            except Exception as exc:
+                logger.warning(f"Parakeet VAD segmentation failed, using timestamps: {exc}")
+                segments = self._recognize_timestamp_segments(audio, duration)
+        else:
+            segments = self._recognize_timestamp_segments(audio, duration)
+
+        info = SimpleNamespace(duration=duration, language=None)
+        return iter(segments), info
+
+    def _load_audio(self, audio_input) -> np.ndarray:
+        if isinstance(audio_input, np.ndarray):
+            audio = np.asarray(audio_input, dtype=np.float32)
+            if audio.ndim == 2:
+                audio = audio.mean(axis=1)
+            return audio.reshape(-1).astype(np.float32, copy=False)
+
+        from faster_whisper.audio import decode_audio
+
+        audio = decode_audio(str(audio_input), sampling_rate=self.sample_rate)
+        audio = np.asarray(audio, dtype=np.float32)
+        if audio.ndim == 2:
+            audio = audio.mean(axis=1)
+        return audio.reshape(-1).astype(np.float32, copy=False)
+
+    def _recognize_vad_segments(self, audio: np.ndarray) -> list[SimpleNamespace]:
+        results = list(
+            self._segment_model.recognize(
+                audio,
+                sample_rate=self.sample_rate,
+                channel="mean",
+            )
+        )
+        segments = [
+            SimpleNamespace(
+                start=float(result.start),
+                end=float(result.end),
+                text=str(result.text).strip(),
+            )
+            for result in results
+            if str(result.text).strip()
+        ]
+        if not segments:
+            return self._recognize_timestamp_segments(
+                audio, float(audio.shape[0] / self.sample_rate)
+            )
+        return segments
+
+    def _recognize_timestamp_segments(
+        self,
+        audio: np.ndarray,
+        duration: float,
+    ) -> list[SimpleNamespace]:
+        result = self._timestamp_model.recognize(
+            audio,
+            sample_rate=self.sample_rate,
+            channel="mean",
+        )
+        text = str(getattr(result, "text", "")).strip()
+        tokens = getattr(result, "tokens", None) or []
+        timestamps = getattr(result, "timestamps", None) or []
+
+        if not text:
+            return []
+        if not tokens or not timestamps or len(tokens) != len(timestamps):
+            return [SimpleNamespace(start=0.0, end=duration, text=text)]
+
+        segments: list[SimpleNamespace] = []
+        start = float(timestamps[0])
+        last_time = start
+        parts: list[str] = []
+
+        for token, ts in zip(tokens, timestamps):
+            token_text = str(token)
+            current_time = float(ts)
+            parts.append(token_text)
+            last_time = current_time
+            if token_text.strip().endswith((".", "?", "!")) or current_time - start >= 12.0:
+                chunk = "".join(parts).strip()
+                if chunk:
+                    segments.append(
+                        SimpleNamespace(
+                            start=max(0.0, start),
+                            end=min(duration, max(current_time, start + 0.25)),
+                            text=chunk,
+                        )
+                    )
+                parts = []
+                start = current_time
+
+        chunk = "".join(parts).strip()
+        if chunk:
+            segments.append(
+                SimpleNamespace(
+                    start=max(0.0, start),
+                    end=min(duration, max(last_time, start + 0.25)),
+                    text=chunk,
+                )
+            )
+
+        return segments or [SimpleNamespace(start=0.0, end=duration, text=text)]
+
+
+def _onnx_cache_root() -> Path:
+    return Path(__file__).resolve().parents[2] / "model_cache" / "onnx"
+
+
+def _configure_onnx_hf_cache(cache_root: Path) -> None:
+    hf_home = cache_root / "hf_home"
+    os.environ["HF_HOME"] = str(hf_home)
+    os.environ["HF_HUB_CACHE"] = str(hf_home / "hub")
+    os.environ["HF_XET_CACHE"] = str(hf_home / "xet")
+    os.environ.setdefault("HF_HUB_DISABLE_SYMLINKS_WARNING", "1")
+    hf_home.mkdir(parents=True, exist_ok=True)
+
+
+def _clear_incomplete_onnx_cache(path: Path, required_files: tuple[str, ...]) -> None:
+    if not path.exists():
+        return
+    if all((path / filename).is_file() for filename in required_files):
+        return
+    logger.warning(f"Clearing incomplete ONNX model cache: {path}")
+    shutil.rmtree(path, onerror=_on_rmtree_error)
+    if path.exists():
+        _force_remove_tree(path)
+
+
+def _onnx_providers(device_type: str) -> list[str]:
+    try:
+        import onnxruntime as ort
+
+        available = set(ort.get_available_providers())
+    except Exception:
+        available = set()
+
+    if device_type == "cuda" and "CUDAExecutionProvider" in available:
+        return ["CUDAExecutionProvider", "CPUExecutionProvider"]
+    if device_type == "cuda":
+        logger.warning("ONNX Runtime CUDA provider unavailable; using CPU provider")
+    return ["CPUExecutionProvider"]
+
+
+def _onnx_session_options():
+    import onnxruntime as ort
+
+    sess_options = ort.SessionOptions()
+    sess_options.log_severity_level = 3
+    return sess_options
+
+
+def load_parakeet_onnx_model(device_type: str = "cpu") -> ParakeetOnnxModel:
+    try:
+        import onnx_asr
+    except Exception as exc:
+        raise ModelLoadError(
+            "Parakeet ONNX requires onnx-asr and onnxruntime-gpu. "
+            "Run the installer with Parakeet ONNX support enabled."
+        ) from exc
+
+    providers = _onnx_providers(device_type)
+    cache_root = _onnx_cache_root()
+    cache_root.mkdir(parents=True, exist_ok=True)
+    _configure_onnx_hf_cache(cache_root)
+    model_dir = cache_root / "parakeet-tdt-0.6b-v3"
+    vad_dir = cache_root / "silero-vad"
+    _clear_incomplete_onnx_cache(
+        model_dir,
+        ("config.json", "encoder-model.onnx", "decoder_joint-model.onnx", "vocab.txt"),
+    )
+    _clear_incomplete_onnx_cache(vad_dir, ("silero_vad.onnx",))
+
+    try:
+        logger.info(f"Loading Parakeet ONNX with providers: {providers}")
+        text_model = onnx_asr.load_model(
+            PARAKEET_ONNX_ASR_NAME,
+            path=model_dir,
+            sess_options=_onnx_session_options(),
+            providers=providers,
+        )
+    except Exception as exc:
+        raise ModelLoadError(f"Error loading Parakeet ONNX model: {exc}") from exc
+
+    segment_model = None
+    try:
+        vad = onnx_asr.load_vad(
+            "silero",
+            path=vad_dir,
+            sess_options=_onnx_session_options(),
+            providers=["CPUExecutionProvider"],
+        )
+        segment_model = text_model.with_vad(
+            vad,
+            max_speech_duration_s=25,
+            min_silence_duration_ms=350,
+            speech_pad_ms=80,
+        )
+    except Exception as exc:
+        logger.warning(f"Parakeet ONNX VAD unavailable; using token timestamps: {exc}")
+
+    return ParakeetOnnxModel(text_model, segment_model, providers)
 
 
 def _get_local_model_dir(repo_id: str) -> Path:

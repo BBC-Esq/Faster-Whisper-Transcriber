@@ -3,12 +3,24 @@ import subprocess
 import time
 import os
 import tkinter as tk
+from pathlib import Path
 from tkinter import messagebox
 
 _gpu_packages = [
     "nvidia-cuda-runtime-cu12==12.8.90",
     "nvidia-cublas-cu12==12.8.4.1",
+    "nvidia-cudnn-cu12==9.10.2.21",
     "nvidia-ml-py",
+]
+
+_parakeet_onnx_gpu_packages = [
+    "onnx-asr[hub]",
+    "onnxruntime-gpu!=1.24.1",
+]
+
+_parakeet_onnx_cpu_packages = [
+    "onnx-asr[hub]",
+    "onnxruntime!=1.24.1",
 ]
 
 _supported_python_versions = {"cp311", "cp312", "cp313"}
@@ -26,6 +38,7 @@ libs = [
 
 
 start_time = time.time()
+APP_DIR = Path(__file__).resolve().parent
 
 def enable_ansi_colors():
     if sys.platform == "win32":
@@ -36,6 +49,17 @@ def enable_ansi_colors():
         kernel32.GetConsoleMode(stdout_handle, ctypes.byref(mode))
         mode.value |= 0x0004
         kernel32.SetConsoleMode(stdout_handle, mode)
+
+def configure_install_caches():
+    cache_dirs = {
+        "UV_CACHE_DIR": APP_DIR / "uv-cache",
+        "PIP_CACHE_DIR": APP_DIR / "pip-cache",
+        "TMP": APP_DIR / "pip-tmp",
+        "TEMP": APP_DIR / "pip-tmp",
+    }
+    for env_name, path in cache_dirs.items():
+        path.mkdir(parents=True, exist_ok=True)
+        os.environ.setdefault(env_name, str(path))
 
 def has_nvidia_gpu():
     try:
@@ -105,6 +129,13 @@ def build_library_list():
 
     return all_libs
 
+def build_parakeet_onnx_library_list():
+    return (
+        list(_parakeet_onnx_gpu_packages)
+        if hardware_type == "GPU"
+        else list(_parakeet_onnx_cpu_packages)
+    )
+
 def install_libraries(libraries, max_retries=5, delay=3):
     command = ["uv", "pip", "install"] + libraries
 
@@ -126,6 +157,7 @@ def install_libraries(libraries, max_retries=5, delay=3):
 
 def main():
     enable_ansi_colors()
+    configure_install_caches()
 
     if not check_python_version_and_confirm():
         sys.exit(1)
@@ -147,6 +179,19 @@ def main():
     print(f"\033[92mInstalling {len(all_libs)} libraries ({hardware_type} configuration):\033[0m")
     success, attempts = install_libraries(all_libs)
 
+    parakeet_success = None
+    parakeet_attempts = 0
+    if tkinter_message_box(
+        "Optional Parakeet ONNX",
+        "Install experimental Parakeet ONNX support?\n\n"
+        "This avoids NVIDIA NeMo and uses ONNX Runtime locally. "
+        "The Parakeet model itself downloads the first time you select it.",
+        yes_no=True,
+    ):
+        parakeet_libs = build_parakeet_onnx_library_list()
+        print(f"\033[92mInstalling Parakeet ONNX support ({hardware_type} configuration):\033[0m")
+        parakeet_success, parakeet_attempts = install_libraries(parakeet_libs)
+
     print("\n----- Installation Summary -----")
     if not success:
         print(f"\033[91mInstallation failed after {attempts} attempts.\033[0m")
@@ -154,6 +199,15 @@ def main():
         print(f"\033[93mAll libraries installed successfully after {attempts} attempts.\033[0m")
     else:
         print("\033[92mAll libraries installed successfully on the first attempt.\033[0m")
+
+    if parakeet_success is not None:
+        if parakeet_success:
+            print("\033[92mParakeet ONNX support installed successfully.\033[0m")
+        else:
+            print(
+                f"\033[93mParakeet ONNX support failed after {parakeet_attempts} "
+                "attempt(s). Faster Whisper remains unaffected.\033[0m"
+            )
 
     end_time = time.time()
     total_time = end_time - start_time

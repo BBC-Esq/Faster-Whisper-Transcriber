@@ -54,6 +54,7 @@ SETTINGS_CLIPBOARD_DOCKED = "clipboard/docked"
 SETTINGS_CLIPBOARD_VISIBLE = "clipboard/visible"
 SETTINGS_CLIPBOARD_ALWAYS_ON_TOP = "clipboard/always_on_top"
 SETTINGS_APPEND_MODE = "clipboard/append_mode"
+SETTINGS_CLIENT_CALL_MODE = "clipboard/client_call_mode"
 SETTINGS_MODEL = "model/name"
 SETTINGS_DEVICE = "model/device"
 SETTINGS_QUANTIZATION = "model/quantization"
@@ -159,6 +160,7 @@ class MainWindow(QMainWindow):
         "quantization": "float32",
         "task_mode": "transcribe",
         "append_mode": False,
+        "client_call_mode": False,
         "clipboard_visible": False,
         "clipboard_always_on_top": True,
         "clipboard_docked": True,
@@ -197,6 +199,9 @@ class MainWindow(QMainWindow):
         )
         self.clipboard_window.always_on_top_changed.connect(
             self._on_clipboard_always_on_top_changed
+        )
+        self.clipboard_window.client_call_mode_changed.connect(
+            self._on_client_call_mode_changed
         )
 
         self.file_panel = FilePanelWindow(None, width=340)
@@ -350,6 +355,15 @@ class MainWindow(QMainWindow):
         )
         self.clipboard_window.set_append_mode(append_mode)
 
+        client_call_mode = self.settings.value(
+            SETTINGS_CLIENT_CALL_MODE,
+            config_manager.get_value(
+                "client_call_mode", self.DEFAULTS["client_call_mode"]
+            ),
+            type=bool,
+        )
+        self.clipboard_window.set_client_call_mode(client_call_mode)
+
         always_on_top = self.settings.value(
             SETTINGS_CLIPBOARD_ALWAYS_ON_TOP,
             self.DEFAULTS["clipboard_always_on_top"],
@@ -419,7 +433,9 @@ class MainWindow(QMainWindow):
             config_manager.set_model_settings(model, quantization, device)
             config_manager.set_value("task_mode", task_mode)
             config_manager.set_value("clipboard_append_mode", append_mode)
+            config_manager.set_value("client_call_mode", client_call_mode)
             config_manager.set_value("show_clipboard_window", self._clipboard_visible)
+            self.controller.set_whisper_params(self._current_whisper_params())
         except Exception as e:
             logger.warning(f"Failed to sync config manager: {e}")
 
@@ -454,6 +470,9 @@ class MainWindow(QMainWindow):
 
         self.settings.setValue(
             SETTINGS_APPEND_MODE, self.clipboard_window.is_append_mode()
+        )
+        self.settings.setValue(
+            SETTINGS_CLIENT_CALL_MODE, self.clipboard_window.is_client_call_mode()
         )
         self.settings.setValue(SETTINGS_CLIPBOARD_VISIBLE, self._clipboard_visible)
         self.settings.setValue(
@@ -695,6 +714,28 @@ class MainWindow(QMainWindow):
     def _update_model_status(self, text: str) -> None:
         self.model_status_label.setText(text)
 
+    def _current_whisper_params(self) -> dict:
+        include_timestamps = config_manager.get_value(
+            "include_timestamps",
+            not config_manager.get_value("without_timestamps", True),
+        )
+        return {
+            "without_timestamps": not include_timestamps,
+            "word_timestamps": config_manager.get_value("word_timestamps", False),
+            "beam_size": config_manager.get_value("beam_size", 5),
+            "vad_filter": config_manager.get_value("vad_filter", False),
+            "condition_on_previous_text": config_manager.get_value(
+                "condition_on_previous_text", True
+            ),
+            "client_call_mode": self.clipboard_window.is_client_call_mode(),
+            "speaker_labels": config_manager.get_value(
+                "speaker_labels", ["Lawyer", "Client"]
+            ),
+            "speaker_voice_profiles": config_manager.get_value(
+                "speaker_voice_profiles", {}
+            ),
+        }
+
     def _show_current_model_status(self) -> None:
         if self._model_is_loaded:
             name = self.loaded_model_settings.get("model_name", "")
@@ -704,7 +745,12 @@ class MainWindow(QMainWindow):
                 f"  |  server: on ({self._server_port})"
                 if self._server_mode_enabled else ""
             )
-            self._update_model_status(f"{name} ({quant} / {device}){server_bit}")
+            if quant == "onnx":
+                self._update_model_status(
+                    f"{name} (ONNX / {device.upper()}){server_bit}"
+                )
+            else:
+                self._update_model_status(f"{name} ({quant} / {device}){server_bit}")
         else:
             self._update_model_status("No model loaded")
 
@@ -802,6 +848,10 @@ class MainWindow(QMainWindow):
             "vad_filter": config_manager.get_value("vad_filter", False),
             "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", True),
         }
+        speaker_labels = config_manager.get_value(
+            "speaker_labels", ["Lawyer", "Client"]
+        )
+        speaker_profiles = config_manager.get_value("speaker_voice_profiles", {})
         server_settings = {
             "server_mode_enabled": self._server_mode_enabled,
             "server_port": self._server_port,
@@ -814,6 +864,8 @@ class MainWindow(QMainWindow):
             current_task_mode=self.task_mode,
             current_audio_device=current_audio,
             current_whisper_settings=whisper_settings,
+            current_speaker_labels=speaker_labels,
+            current_speaker_profiles=speaker_profiles,
             current_ext_checked=self.file_panel.get_ext_checked(),
             current_server_settings=server_settings,
             is_busy_check=self._is_busy,
@@ -822,6 +874,7 @@ class MainWindow(QMainWindow):
         dlg.audio_device_changed.connect(self._on_audio_device_changed)
         dlg.task_mode_changed.connect(self._on_task_mode_changed)
         dlg.whisper_settings_changed.connect(self._on_whisper_settings_changed)
+        dlg.speaker_settings_changed.connect(self._on_speaker_settings_changed)
         dlg.file_types_changed.connect(self._on_file_types_changed)
         dlg.server_mode_changed.connect(self._on_server_mode_changed)
         dlg.exec()
@@ -885,6 +938,12 @@ class MainWindow(QMainWindow):
     def _on_append_mode_changed(self, checked: bool) -> None:
         self._save_config("clipboard_append_mode", checked)
 
+    @Slot(bool)
+    def _on_client_call_mode_changed(self, checked: bool) -> None:
+        self.settings.setValue(SETTINGS_CLIENT_CALL_MODE, checked)
+        self._save_config("client_call_mode", checked)
+        self.controller.set_whisper_params(self._current_whisper_params())
+
     @Slot(str, str)
     def _show_error_dialog(self, title: str, message: str) -> None:
         logger.error(f"Error: {title} - {message}")
@@ -908,15 +967,13 @@ class MainWindow(QMainWindow):
     def _on_whisper_settings_changed(self, settings: dict) -> None:
         for key, value in settings.items():
             self._save_config(key, value)
-        # Translate include_timestamps to the params the transcription service expects
-        whisper_params = {
-            "without_timestamps": not settings.get("include_timestamps", False),
-            "word_timestamps": False,
-            "beam_size": settings.get("beam_size", 5),
-            "vad_filter": settings.get("vad_filter", False),
-            "condition_on_previous_text": settings.get("condition_on_previous_text", True),
-        }
-        self.controller.set_whisper_params(whisper_params)
+        self.controller.set_whisper_params(self._current_whisper_params())
+
+    def _on_speaker_settings_changed(self, settings: dict) -> None:
+        for key in ("speaker_labels", "speaker_voice_profiles"):
+            if key in settings:
+                self._save_config(key, settings[key])
+        self.controller.set_whisper_params(self._current_whisper_params())
 
     def _on_file_types_changed(self, ext_checked: dict) -> None:
         self.file_panel.set_ext_checked(ext_checked)
@@ -1058,7 +1115,7 @@ class MainWindow(QMainWindow):
         self._pending_source_file = file_path
 
         # Force timestamps on for formats that require them
-        if output_format in ("srt", "vtt"):
+        if output_format in ("srt", "vtt", "tsv"):
             self.controller.transcription_service.set_timestamps_override(False)
         else:
             self.controller.transcription_service.set_timestamps_override(None)
@@ -1109,17 +1166,9 @@ class MainWindow(QMainWindow):
 
     @Slot(list, str, str, int, str)
     def _on_batch_start(self, files, fmt, output_dir, batch_size, task_mode) -> None:
-        include_timestamps = config_manager.get_value("include_timestamps", False)
-        # Force timestamps on for formats that require them
-        if fmt in ("srt", "vtt"):
-            include_timestamps = True
-        whisper_params = {
-            "without_timestamps": not include_timestamps,
-            "word_timestamps": False,
-            "beam_size": config_manager.get_value("beam_size", 5),
-            "vad_filter": config_manager.get_value("vad_filter", False),
-            "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", True),
-        }
+        whisper_params = self._current_whisper_params()
+        if fmt in ("srt", "vtt", "tsv"):
+            whisper_params["without_timestamps"] = False
         self.record_button.setText("Transcribing...")
         self.record_button.set_state(WaveformButton.TRANSCRIBING)
         self.record_button.setEnabled(False)

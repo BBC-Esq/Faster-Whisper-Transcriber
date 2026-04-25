@@ -201,7 +201,9 @@ def _do_transcription(item: WorkItem) -> Dict[str, Any]:
 
     language = item.settings.language or None
 
-    if item.settings.batch_size and item.settings.batch_size > 1:
+    use_batched_pipeline = not getattr(model, "expects_file_path", False)
+
+    if item.settings.batch_size and item.settings.batch_size > 1 and use_batched_pipeline:
         extra_kwargs["vad_filter"] = True
         extra_kwargs["vad_parameters"] = dict(
             threshold=0.0008,

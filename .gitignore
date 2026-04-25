@@ -21,6 +21,11 @@ logs/
 
 # Runtime/temp
 runtime/
+model_cache/
+pip-cache/
+pip-tmp/
+uv-cache/
+uv-python/
 .lock
 nul
 

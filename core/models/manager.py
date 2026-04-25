@@ -14,6 +14,8 @@ from core.models.loader import (
     get_missing_files,
     download_model_files,
     load_model,
+    load_parakeet_onnx_model,
+    is_parakeet_onnx_model,
     validate_model_path,
 )
 from core.logging_config import get_logger
@@ -78,6 +80,22 @@ class _ModelLoaderRunnable(QRunnable):
 
     def run(self) -> None:
         try:
+            if is_parakeet_onnx_model(self.model_name):
+                if self.cancel_event.is_set():
+                    self.signals.download_cancelled.emit(self.model_version)
+                    return
+
+                self.signals.loading_started.emit(self.model_name, self.model_version)
+                model = load_parakeet_onnx_model(self.device)
+                self.signals.model_loaded.emit(
+                    model,
+                    self.model_name,
+                    self.quant_type,
+                    self.device,
+                    self.model_version,
+                )
+                return
+
             repo_id = _make_repo_string(self.model_name, self.quant_type)
 
             if self.cancel_event.is_set():

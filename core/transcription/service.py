@@ -11,6 +11,10 @@ from core.audio.wav_for_whisper import try_load_wav_for_faster_whisper
 from core.temp_file_manager import temp_file_manager
 from core.text.curation import curate_text
 from core.output.writers import SegmentData, TranscriptionResult
+from core.transcription.client_call import (
+    apply_client_call_speakers,
+    format_client_call_transcript,
+)
 from core.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -66,23 +70,35 @@ class _TranscriptionRunnable(QRunnable):
                 return
 
             logger.info(f"Starting transcription: {self.audio_file}")
-
-            whisper_sr = self.model.feature_extractor.sampling_rate
-            audio_input: str | np.ndarray = try_load_wav_for_faster_whisper(
-                self.audio_file, target_sr=whisper_sr
+            logger.info(
+                "Transcription engine: "
+                f"{getattr(self.model, 'engine_name', type(self.model).__name__)}"
             )
-            if audio_input is None:
-                audio_input = str(self.audio_file)
 
+            if getattr(self.model, "expects_file_path", False):
+                audio_input = str(self.audio_file)
+            else:
+                whisper_sr = self.model.feature_extractor.sampling_rate
+                audio_input: str | np.ndarray = try_load_wav_for_faster_whisper(
+                    self.audio_file, target_sr=whisper_sr
+                )
+                if audio_input is None:
+                    audio_input = str(self.audio_file)
+
+            client_call_mode = self.whisper_params.get("client_call_mode", False)
             extra_kwargs = {
-                "without_timestamps": self.whisper_params.get("without_timestamps", True),
+                "without_timestamps": False if client_call_mode else self.whisper_params.get("without_timestamps", True),
                 "word_timestamps": self.whisper_params.get("word_timestamps", False),
                 "beam_size": self.whisper_params.get("beam_size", 5),
                 "vad_filter": self.whisper_params.get("vad_filter", True),
                 "condition_on_previous_text": self.whisper_params.get("condition_on_previous_text", False),
             }
 
-            if self.batch_size is not None and int(self.batch_size) > 1:
+            if (
+                self.batch_size is not None
+                and int(self.batch_size) > 1
+                and not getattr(self.model, "expects_file_path", False)
+            ):
                 # BatchedInferencePipeline requires VAD or clip_timestamps to
                 # split audio into chunks.  Always apply tuned VAD parameters
                 # that maximize audio coverage while avoiding hallucinations
@@ -141,7 +157,22 @@ class _TranscriptionRunnable(QRunnable):
                 else:
                     self.signals.progress_updated.emit(segment_count, -1, -1)
 
-            text = "\n".join(text_parts)
+            if client_call_mode:
+                try:
+                    if apply_client_call_speakers(
+                        self.audio_file,
+                        segment_data_list,
+                        labels=self.whisper_params.get("speaker_labels"),
+                        voice_profiles=self.whisper_params.get("speaker_voice_profiles"),
+                    ):
+                        text = format_client_call_transcript(segment_data_list)
+                    else:
+                        text = "\n".join(text_parts)
+                except Exception as e:
+                    logger.warning(f"Client call speaker labeling failed: {e}")
+                    text = "\n".join(text_parts)
+            else:
+                text = "\n".join(text_parts)
             logger.info(f"Transcription completed successfully ({segment_count} segments)")
 
             result = TranscriptionResult(
@@ -260,7 +291,7 @@ class TranscriptionService(QObject):
 
     def _on_transcription_done(self, text: str) -> None:
         self._is_transcribing = False
-        if self.curate_enabled:
+        if self.curate_enabled and not self._whisper_params.get("client_call_mode", False):
             try:
                 text = curate_text(text)
             except Exception as e:

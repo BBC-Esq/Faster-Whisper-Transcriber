@@ -14,6 +14,7 @@ class SegmentData:
     start: float
     end: float
     text: str
+    speaker: str | None = None
 
 
 @dataclass
@@ -33,10 +34,21 @@ def format_timestamp(seconds: float, delimiter: str = ",") -> str:
     return f"{hours:02d}:{minutes:02d}:{secs:02d}{delimiter}{millis:03d}"
 
 
-def write_txt(segments: list[SegmentData], output_file: Path) -> None:
+def _segment_text(segment: SegmentData) -> str:
+    text = segment.text.strip()
+    if segment.speaker:
+        return f"{segment.speaker}: {text}"
+    return text
+
+
+def write_txt(result: TranscriptionResult, output_file: Path) -> None:
     with open(output_file, "w", encoding="utf-8") as f:
-        for segment in segments:
-            f.write(segment.text.strip() + "\n")
+        text = result.text.strip()
+        if text:
+            f.write(text + "\n")
+        else:
+            for segment in result.segments:
+                f.write(_segment_text(segment) + "\n")
 
 
 def write_srt(segments: list[SegmentData], output_file: Path) -> None:
@@ -47,7 +59,7 @@ def write_srt(segments: list[SegmentData], output_file: Path) -> None:
                 f"{format_timestamp(segment.start, ',')} --> "
                 f"{format_timestamp(segment.end, ',')}\n"
             )
-            f.write(f"{segment.text.strip()}\n\n")
+            f.write(f"{_segment_text(segment)}\n\n")
 
 
 def write_vtt(segments: list[SegmentData], output_file: Path) -> None:
@@ -58,7 +70,17 @@ def write_vtt(segments: list[SegmentData], output_file: Path) -> None:
                 f"{format_timestamp(segment.start, '.')} --> "
                 f"{format_timestamp(segment.end, '.')}\n"
             )
-            f.write(f"{segment.text.strip()}\n\n")
+            f.write(f"{_segment_text(segment)}\n\n")
+
+
+def write_tsv(segments: list[SegmentData], output_file: Path) -> None:
+    with open(output_file, "w", encoding="utf-8") as f:
+        f.write("start\tend\tspeaker\ttext\n")
+        for segment in segments:
+            f.write(
+                f"{segment.start:.3f}\t{segment.end:.3f}\t"
+                f"{segment.speaker or ''}\t{segment.text.strip()}\n"
+            )
 
 
 def write_json(result: TranscriptionResult, output_file: Path) -> None:
@@ -69,6 +91,7 @@ def write_json(result: TranscriptionResult, output_file: Path) -> None:
             {
                 "start": seg.start,
                 "end": seg.end,
+                "speaker": seg.speaker,
                 "text": seg.text.strip(),
             }
             for seg in result.segments
@@ -82,9 +105,10 @@ def write_output(
     result: TranscriptionResult, output_file: Path, fmt: str
 ) -> None:
     writers = {
-        "txt": lambda: write_txt(result.segments, output_file),
+        "txt": lambda: write_txt(result, output_file),
         "srt": lambda: write_srt(result.segments, output_file),
         "vtt": lambda: write_vtt(result.segments, output_file),
+        "tsv": lambda: write_tsv(result.segments, output_file),
         "json": lambda: write_json(result, output_file),
     }
     writer = writers.get(fmt)
