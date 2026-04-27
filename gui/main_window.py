@@ -565,7 +565,6 @@ class MainWindow(QMainWindow):
         self.controller.batch_completed.connect(self.file_panel.on_batch_completed)
         self.controller.batch_completed.connect(self._on_batch_finished)
         self.controller.batch_error.connect(self.file_panel.on_batch_error)
-        self.controller.batch_error.connect(self._on_batch_finished)
 
     def _build_ui(self) -> None:
         self.menuBar().setVisible(False)
