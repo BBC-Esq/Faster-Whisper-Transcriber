@@ -45,7 +45,7 @@ logger = get_logger(__name__)
 
 SUPPORTED_AUDIO_EXTENSIONS = {
     ".aac", ".amr", ".asf", ".avi", ".flac", ".m4a",
-    ".mkv", ".mp3", ".mp4", ".wav", ".webm", ".wma",
+    ".mkv", ".mp3", ".mp4", ".ogg", ".wav", ".webm", ".wma",
 }
 
 SETTINGS_GEOMETRY = "window/geometry"
