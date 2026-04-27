@@ -83,10 +83,6 @@ class _TranscriptionRunnable(QRunnable):
             }
 
             if self.batch_size is not None and int(self.batch_size) > 1:
-                # BatchedInferencePipeline requires VAD or clip_timestamps to
-                # split audio into chunks.  Always apply tuned VAD parameters
-                # that maximize audio coverage while avoiding hallucinations
-                # on near-silent segments.
                 extra_kwargs["vad_filter"] = True
                 extra_kwargs["vad_parameters"] = dict(
                     threshold=0.0008,

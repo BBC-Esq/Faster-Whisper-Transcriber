@@ -446,7 +446,6 @@ class FilePanelWindow(QWidget):
             self._stop_btn.setEnabled(True)
             self._status_label.setText("Starting...")
 
-            # Get task_mode from main window
             task_mode = "transcribe"
             try:
                 main_win = self._main_window_ref

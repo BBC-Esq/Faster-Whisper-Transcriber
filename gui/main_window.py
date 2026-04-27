@@ -908,7 +908,6 @@ class MainWindow(QMainWindow):
     def _on_whisper_settings_changed(self, settings: dict) -> None:
         for key, value in settings.items():
             self._save_config(key, value)
-        # Translate include_timestamps to the params the transcription service expects
         whisper_params = {
             "without_timestamps": not settings.get("include_timestamps", False),
             "word_timestamps": False,
@@ -1110,7 +1109,6 @@ class MainWindow(QMainWindow):
     @Slot(list, str, str, int, str)
     def _on_batch_start(self, files, fmt, output_dir, batch_size, task_mode) -> None:
         include_timestamps = config_manager.get_value("include_timestamps", False)
-        # Force timestamps on for formats that require them
         if fmt in ("srt", "vtt"):
             include_timestamps = True
         whisper_params = {

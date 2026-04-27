@@ -83,10 +83,6 @@ class BatchProcessor(QThread):
                 "condition_on_previous_text": self.whisper_params.get("condition_on_previous_text", False),
             }
 
-            # BatchedInferencePipeline requires VAD or clip_timestamps to
-            # split audio into chunks.  Always apply tuned VAD parameters
-            # that maximize audio coverage while avoiding hallucinations
-            # on near-silent segments.
             extra_kwargs["vad_filter"] = True
             extra_kwargs["vad_parameters"] = dict(
                 threshold=0.0008,
