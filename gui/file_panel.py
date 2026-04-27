@@ -131,6 +131,7 @@ class FilePanelWindow(QWidget):
         self._selected_path: str = ""
         self._custom_output_dir: str = ""
         self._is_processing = False
+        self._main_window_ref = None
         self._ext_checked: dict[str, bool] = {ext: True for ext in SUPPORTED_AUDIO_EXTENSIONS}
 
         self.setWindowTitle("File Transcription")
@@ -371,6 +372,9 @@ class FilePanelWindow(QWidget):
                 self._path_label.setToolTip(selected)
                 self._start_btn.setEnabled(True)
 
+    def set_main_window(self, main_window) -> None:
+        self._main_window_ref = main_window
+
     # --- Output mode ---
 
     @Slot(int)
@@ -444,7 +448,7 @@ class FilePanelWindow(QWidget):
             # Get task_mode from main window
             task_mode = "transcribe"
             try:
-                main_win = self.parent()
+                main_win = self._main_window_ref
                 if main_win and hasattr(main_win, "task_mode"):
                     task_mode = main_win.task_mode
             except Exception:

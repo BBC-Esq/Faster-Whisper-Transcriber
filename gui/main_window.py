@@ -200,6 +200,7 @@ class MainWindow(QMainWindow):
         )
 
         self.file_panel = FilePanelWindow(None, width=340)
+        self.file_panel.set_main_window(self)
         self.file_panel.user_closed.connect(self._on_file_panel_closed)
         self.file_panel.docked_changed.connect(
             lambda d: logger.debug(f"File panel docked: {d}")
