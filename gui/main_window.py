@@ -799,8 +799,8 @@ class MainWindow(QMainWindow):
         whisper_settings = {
             "include_timestamps": config_manager.get_value("include_timestamps", False),
             "beam_size": config_manager.get_value("beam_size", 5),
-            "vad_filter": config_manager.get_value("vad_filter", False),
-            "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", True),
+            "vad_filter": config_manager.get_value("vad_filter", True),
+            "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", False),
         }
         server_settings = {
             "server_mode_enabled": self._server_mode_enabled,
@@ -913,8 +913,8 @@ class MainWindow(QMainWindow):
             "without_timestamps": not settings.get("include_timestamps", False),
             "word_timestamps": False,
             "beam_size": settings.get("beam_size", 5),
-            "vad_filter": settings.get("vad_filter", False),
-            "condition_on_previous_text": settings.get("condition_on_previous_text", True),
+            "vad_filter": settings.get("vad_filter", True),
+            "condition_on_previous_text": settings.get("condition_on_previous_text", False),
         }
         self.controller.set_whisper_params(whisper_params)
 
@@ -1117,8 +1117,8 @@ class MainWindow(QMainWindow):
             "without_timestamps": not include_timestamps,
             "word_timestamps": False,
             "beam_size": config_manager.get_value("beam_size", 5),
-            "vad_filter": config_manager.get_value("vad_filter", False),
-            "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", True),
+            "vad_filter": config_manager.get_value("vad_filter", True),
+            "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", False),
         }
         self.record_button.setText("Transcribing...")
         self.record_button.set_state(WaveformButton.TRANSCRIBING)

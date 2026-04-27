@@ -75,8 +75,8 @@ class TranscriberController(QObject):
             "without_timestamps": not include_timestamps,
             "word_timestamps": False,
             "beam_size": config_manager.get_value("beam_size", 5),
-            "vad_filter": config_manager.get_value("vad_filter", False),
-            "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", True),
+            "vad_filter": config_manager.get_value("vad_filter", True),
+            "condition_on_previous_text": config_manager.get_value("condition_on_previous_text", False),
         }
         self.transcription_service.set_whisper_params(params)
 
