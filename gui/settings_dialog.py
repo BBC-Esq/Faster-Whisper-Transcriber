@@ -473,6 +473,7 @@ class SettingsDialog(QDialog):
                 self.server_mode_toggle.blockSignals(True)
                 self.server_mode_toggle.setChecked(False)
                 self.server_mode_toggle.blockSignals(False)
+                return
 
         if self._model_settings_changed():
             model = self.model_dropdown.currentText()
