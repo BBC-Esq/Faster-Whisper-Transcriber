@@ -80,9 +80,22 @@ class BatchProcessor(QThread):
                 "without_timestamps": self.whisper_params.get("without_timestamps", True),
                 "word_timestamps": self.whisper_params.get("word_timestamps", False),
                 "beam_size": self.whisper_params.get("beam_size", 5),
-                "vad_filter": self.whisper_params.get("vad_filter", True),
                 "condition_on_previous_text": self.whisper_params.get("condition_on_previous_text", False),
             }
+
+            # BatchedInferencePipeline requires VAD or clip_timestamps to
+            # split audio into chunks.  Always apply tuned VAD parameters
+            # that maximize audio coverage while avoiding hallucinations
+            # on near-silent segments.
+            extra_kwargs["vad_filter"] = True
+            extra_kwargs["vad_parameters"] = dict(
+                threshold=0.0008,
+                neg_threshold=0.0001,
+                min_speech_duration_ms=500,
+                max_speech_duration_s=30,
+                min_silence_duration_ms=1000,
+                speech_pad_ms=500,
+            )
 
             for idx, audio_file in enumerate(self.files, 1):
                 if self.stop_requested.is_set():
