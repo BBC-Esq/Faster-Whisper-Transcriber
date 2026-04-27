@@ -131,6 +131,7 @@ class FilePanelWindow(QWidget):
         self._selected_path: str = ""
         self._custom_output_dir: str = ""
         self._is_processing = False
+        self._batch_had_errors = False
         self._main_window_ref = None
         self._ext_checked: dict[str, bool] = {ext: True for ext in SUPPORTED_AUDIO_EXTENSIONS}
 
@@ -465,15 +466,20 @@ class FilePanelWindow(QWidget):
         self._status_label.setText(f"[{current}/{total}] {message}")
 
     @Slot(str)
+    def on_batch_error(self, message: str) -> None:
+        self._batch_had_errors = True
+        self._status_label.setText(f"Error: {message}")
+
+    @Slot(str)
     def on_batch_completed(self, message: str) -> None:
         self._is_processing = False
         self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
-        self._status_label.setText(message)
-
-    @Slot(str)
-    def on_batch_error(self, message: str) -> None:
-        self._status_label.setText(f"Error: {message}")
+        if self._batch_had_errors:
+            self._status_label.setText(f"Completed with errors ({message})")
+        else:
+            self._status_label.setText(message)
+        self._batch_had_errors = False
 
     def on_single_file_done(self) -> None:
         self._is_processing = False
