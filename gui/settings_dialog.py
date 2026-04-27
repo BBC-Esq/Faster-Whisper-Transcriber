@@ -271,6 +271,7 @@ class SettingsDialog(QDialog):
         self.vad_filter_cb.toggled.connect(self._check_for_changes)
         self.condition_on_previous_cb.toggled.connect(self._check_for_changes)
         self.server_mode_toggle.toggled.connect(self._check_for_changes)
+        self.server_mode_toggle.toggled.connect(self._on_server_toggle_changed)
         self.server_port_spin.valueChanged.connect(self._check_for_changes)
 
     def _populate_from_settings(self) -> None:
@@ -403,7 +404,14 @@ class SettingsDialog(QDialog):
         return current != self.current_server_settings
 
     def _apply_server_mode_lock(self) -> None:
-        server_on = bool(self.current_server_settings.get("server_mode_enabled", False))
+        self._set_server_lock(
+            bool(self.current_server_settings.get("server_mode_enabled", False))
+        )
+
+    def _on_server_toggle_changed(self, checked: bool) -> None:
+        self._set_server_lock(checked)
+
+    def _set_server_lock(self, server_on: bool) -> None:
         locked_widgets = [
             self.model_dropdown,
             self.device_dropdown,
