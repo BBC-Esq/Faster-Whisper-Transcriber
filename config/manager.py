@@ -40,6 +40,7 @@ class ConfigManager:
         "curate_transcription": True,
         "clipboard_append_mode": False,
         "without_timestamps": True,
+        "include_timestamps": False,
         "word_timestamps": False,
         "beam_size": 5,
         "vad_filter": True,
