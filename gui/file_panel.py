@@ -418,7 +418,7 @@ class FilePanelWindow(QWidget):
         if self._is_single_mode():
             self._is_processing = True
             self._start_btn.setEnabled(False)
-            self._stop_btn.setEnabled(True)
+            self._stop_btn.setEnabled(False)
             self._status_label.setText("Transcribing...")
             self.transcribe_file_requested.emit(
                 self._selected_path, batch_size, mode, fmt, output_dir
