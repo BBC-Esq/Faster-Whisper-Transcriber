@@ -5,7 +5,7 @@ import gc
 import uuid
 import threading
 
-from PySide6.QtCore import QObject, Signal, QMutex, QMutexLocker, QRunnable, QThreadPool
+from PySide6.QtCore import Qt, QObject, Signal, QMutex, QMutexLocker, QRunnable, QThreadPool
 
 from core.models.loader import (
     _make_repo_string,
@@ -307,9 +307,9 @@ class ModelManager(QObject):
             holder["error"] = "cancelled"
             done_event.set()
 
-        runnable.signals.model_loaded.connect(_on_loaded)
-        runnable.signals.error_occurred.connect(_on_error)
-        runnable.signals.download_cancelled.connect(_on_cancelled)
+        runnable.signals.model_loaded.connect(_on_loaded, Qt.DirectConnection)
+        runnable.signals.error_occurred.connect(_on_error, Qt.DirectConnection)
+        runnable.signals.download_cancelled.connect(_on_cancelled, Qt.DirectConnection)
         self._thread_pool.start(runnable)
 
         done_event.wait()
