@@ -85,6 +85,13 @@ def _to_mono_float32(audio: np.ndarray) -> np.ndarray:
     return audio
 
 
+def _safe_unlink(path) -> None:
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
 def _write_wav(audio: np.ndarray, sr: int) -> Path:
     tmp = tempfile.NamedTemporaryFile(suffix=".wav", delete=False)
     tmp_path = Path(tmp.name)
@@ -492,19 +499,21 @@ def create_app() -> FastAPI:
                 include_timestamps, word_timestamps, beam_size, vad_filter,
                 condition_on_previous_text, batch_size,
             )
+            loop = asyncio.get_event_loop()
+            future = loop.create_future()
+            item = WorkItem(
+                audio_path=audio_path,
+                settings=settings,
+                model_info=model_info,
+                future=future,
+            )
+            await _state.queue.put(item)
         except ValueError as e:
+            _safe_unlink(audio_path)
             raise HTTPException(status_code=400, detail=str(e))
-
-        loop = asyncio.get_event_loop()
-        future = loop.create_future()
-
-        item = WorkItem(
-            audio_path=audio_path,
-            settings=settings,
-            model_info=model_info,
-            future=future,
-        )
-        await _state.queue.put(item)
+        except Exception:
+            _safe_unlink(audio_path)
+            raise
 
         try:
             result = await future
@@ -545,19 +554,21 @@ def create_app() -> FastAPI:
                 request.beam_size, request.vad_filter,
                 request.condition_on_previous_text, request.batch_size,
             )
+            loop = asyncio.get_event_loop()
+            future = loop.create_future()
+            item = WorkItem(
+                audio_path=audio_path,
+                settings=settings,
+                model_info=model_info,
+                future=future,
+            )
+            await _state.queue.put(item)
         except ValueError as e:
+            _safe_unlink(audio_path)
             raise HTTPException(status_code=400, detail=str(e))
-
-        loop = asyncio.get_event_loop()
-        future = loop.create_future()
-
-        item = WorkItem(
-            audio_path=audio_path,
-            settings=settings,
-            model_info=model_info,
-            future=future,
-        )
-        await _state.queue.put(item)
+        except Exception:
+            _safe_unlink(audio_path)
+            raise
 
         try:
             result = await future
