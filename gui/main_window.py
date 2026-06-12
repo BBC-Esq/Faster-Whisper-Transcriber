@@ -933,6 +933,8 @@ class MainWindow(QMainWindow):
             self.server_manager.stop_server()
 
     def _start_server_mode(self, port: int) -> None:
+        if self.server_manager.is_running():
+            self.server_manager.stop_server()
         model_name = self.loaded_model_settings.get("model_name", self.DEFAULTS["model"])
         quantization = self.loaded_model_settings.get(
             "quantization_type", self.DEFAULTS["quantization"]
