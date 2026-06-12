@@ -67,8 +67,15 @@ class ServerManager(QObject):
     def _run_server(self) -> None:
         try:
             self._server.run()
+        except SystemExit as e:
+            logger.error(f"Server failed to start: exit code {e.code}", exc_info=True)
+            self.server_error.emit(
+                f"Server failed to start on port {self._port}. "
+                "The port may already be in use."
+            )
         except Exception as e:
             logger.error(f"Server thread error: {e}", exc_info=True)
+            self.server_error.emit(str(e))
 
     def stop_server(self) -> None:
         was_running = self.is_running()
