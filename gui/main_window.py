@@ -1060,11 +1060,15 @@ class MainWindow(QMainWindow):
                 "File transcription is unavailable while server mode is on.",
             )
             return True
-        if self.controller.is_transcribing() or self.controller.is_batch_processing():
+        if (
+            self.is_recording
+            or self.controller.is_transcribing()
+            or self.controller.is_batch_processing()
+        ):
             QMessageBox.information(
                 self, "Busy",
-                "A transcription is already in progress. "
-                "Please wait for it to finish.",
+                "A recording or transcription is already in progress. "
+                "Please finish it first.",
             )
             return True
         return False
