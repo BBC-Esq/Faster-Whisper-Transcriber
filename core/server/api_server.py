@@ -186,6 +186,9 @@ def _normalize_to_wav(
 def _do_transcription(item: WorkItem) -> Dict[str, Any]:
     start_time = time.perf_counter()
 
+    if _state.cancel_event.is_set():
+        raise RuntimeError("Server shutting down")
+
     model_info = item.model_info
     model_name = model_info["name"]
     quantization = model_info["quantization_type"]
@@ -243,6 +246,8 @@ def _do_transcription(item: WorkItem) -> Dict[str, Any]:
     text_parts: list[str] = []
     segments_out: list[dict] = []
     for seg in segments_iter:
+        if _state.cancel_event.is_set():
+            raise RuntimeError("Transcription cancelled (server shutting down)")
         text_parts.append(seg.text.lstrip())
         if item.settings.include_timestamps:
             segments_out.append(
