@@ -12,7 +12,7 @@ def get_log_directory() -> Path:
     if getattr(sys, 'frozen', False):
         log_dir = Path(sys.executable).parent / "logs"
     else:
-        log_dir = Path.cwd() / "logs"
+        log_dir = Path(__file__).resolve().parent.parent / "logs"
 
     log_dir.mkdir(parents=True, exist_ok=True)
     return log_dir

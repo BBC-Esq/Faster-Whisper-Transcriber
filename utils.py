@@ -11,7 +11,7 @@ def get_resource_path(relative_path: str) -> str:
         if os.path.basename(script_dir) == "app" and os.path.exists(os.path.join(parent_dir, "compute_type.txt")):
             base_path = script_dir
         else:
-            base_path = os.path.abspath(".")
+            base_path = script_dir
 
     return os.path.join(base_path, relative_path)
 

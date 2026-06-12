@@ -87,9 +87,7 @@ def set_cuda_paths() -> bool:
 
     cuda_runtime_path = nvidia_base / "cuda_runtime"
     if cuda_runtime_path.exists():
-        current_cuda = os.environ.get("CUDA_PATH", "")
-        new_cuda = os.pathsep.join([str(cuda_runtime_path)] + ([current_cuda] if current_cuda else []))
-        os.environ["CUDA_PATH"] = new_cuda
+        os.environ["CUDA_PATH"] = str(cuda_runtime_path)
 
     logger.info("CUDA paths configured successfully")
     return True
