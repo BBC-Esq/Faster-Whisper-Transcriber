@@ -28,7 +28,7 @@ def _is_oom_error(exc: Exception) -> bool:
 
 def _deduplicated_output_path(output_dir: Path, stem: str, suffix: str,
                                seen: dict[str, int]) -> Path:
-    key = stem.lower()
+    key = str(output_dir / stem).lower()
     if key in seen:
         seen[key] += 1
         return output_dir / f"{stem}_{seen[key]}{suffix}"
@@ -137,11 +137,11 @@ class BatchProcessor(QThread):
                     if self.output_directory:
                         out_dir = Path(self.output_directory)
                         out_dir.mkdir(parents=True, exist_ok=True)
-                        output_file = _deduplicated_output_path(
-                            out_dir, audio_file.stem, out_suffix, seen_names
-                        )
                     else:
-                        output_file = audio_file.with_suffix(out_suffix)
+                        out_dir = audio_file.parent
+                    output_file = _deduplicated_output_path(
+                        out_dir, audio_file.stem, out_suffix, seen_names
+                    )
 
                     write_output(result, output_file, self.output_format)
 
