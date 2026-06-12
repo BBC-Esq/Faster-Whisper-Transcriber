@@ -404,6 +404,9 @@ class FilePanelWindow(QWidget):
         if not self._selected_path:
             return
 
+        if self._main_window_ref and self._main_window_ref._reject_new_transcription():
+            return
+
         mode_idx = self._output_mode.currentIndex()
         mode = OUTPUT_MODES[mode_idx][1]
         fmt = self._format_combo.currentText()

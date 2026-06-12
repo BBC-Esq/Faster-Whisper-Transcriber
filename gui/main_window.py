@@ -1053,6 +1053,22 @@ class MainWindow(QMainWindow):
 
     # --- File panel transcription ---
 
+    def _reject_new_transcription(self) -> bool:
+        if self._server_mode_enabled:
+            QMessageBox.information(
+                self, "Server Mode",
+                "File transcription is unavailable while server mode is on.",
+            )
+            return True
+        if self.controller.is_transcribing() or self.controller.is_batch_processing():
+            QMessageBox.information(
+                self, "Busy",
+                "A transcription is already in progress. "
+                "Please wait for it to finish.",
+            )
+            return True
+        return False
+
     @Slot(str, int, str, str, str)
     def _on_file_panel_transcribe(self, file_path: str, batch_size: int,
                                    output_mode: str, output_format: str,
@@ -1156,6 +1172,9 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self, "Unsupported File", "Please select a supported audio file."
             )
+            return
+
+        if self._reject_new_transcription():
             return
 
         self._pending_output_mode = "clipboard"
