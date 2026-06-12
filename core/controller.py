@@ -207,6 +207,8 @@ class TranscriberController(QObject):
 
     @Slot(str)
     def _on_batch_completed(self, message: str) -> None:
+        if self._batch_processor is not None:
+            self._batch_processor.wait()
         self._batch_processor = None
         self.batch_completed.emit(message)
 
