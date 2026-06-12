@@ -1009,6 +1009,10 @@ class MainWindow(QMainWindow):
 
         if self.is_recording:
             self._sample_timer.stop()
+            self._pending_output_mode = "clipboard"
+            self._pending_output_format = "txt"
+            self._pending_output_dir = ""
+            self._pending_source_file = ""
             self.controller.stop_recording()
             self.is_recording = False
             self.record_button.setText("Processing...")
