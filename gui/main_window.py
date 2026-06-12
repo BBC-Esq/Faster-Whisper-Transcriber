@@ -830,10 +830,11 @@ class MainWindow(QMainWindow):
     def _on_settings_update_requested(
         self, model: str, quant: str, device: str
     ) -> None:
-        if self.is_recording:
+        if self.is_recording or self._is_busy():
             QMessageBox.information(
                 self, "Busy",
-                "Stop the current recording before changing the model.",
+                "Finish the current recording or transcription "
+                "before changing the model.",
             )
             return
         self.controller.update_model(model, quant, device)
