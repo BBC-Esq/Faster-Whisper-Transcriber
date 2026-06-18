@@ -15,7 +15,7 @@ _supported_python_versions = {"cp311", "cp312", "cp313"}
 
 libs = [
     "ctranslate2==4.7.1",
-    "faster-whisper2==2.1.0",
+    "faster-whisper2==2.1.1",
     "psutil", # required by my program
     "pynput", # required by my program
     "pyside6", # required by my program
