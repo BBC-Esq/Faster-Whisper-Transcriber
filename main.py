@@ -34,11 +34,32 @@ from core.cuda_setup import setup_cuda_if_available
 _cuda_paths_configured = setup_cuda_if_available()
 
 from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtGui import QPalette, QColor
 
 from core.logging_config import setup_logging, get_logger
 from core.temp_file_manager import temp_file_manager
 from gui.main_window import MainWindow
 from gui.styles import APP_STYLESHEET
+
+
+def _dark_palette() -> QPalette:
+    p = QPalette()
+    p.setColor(QPalette.Window, QColor(30, 31, 34))
+    p.setColor(QPalette.WindowText, QColor(221, 221, 221))
+    p.setColor(QPalette.Base, QColor(24, 25, 27))
+    p.setColor(QPalette.AlternateBase, QColor(38, 39, 42))
+    p.setColor(QPalette.Text, QColor(221, 221, 221))
+    p.setColor(QPalette.Button, QColor(45, 46, 50))
+    p.setColor(QPalette.ButtonText, QColor(221, 221, 221))
+    p.setColor(QPalette.ToolTipBase, QColor(30, 31, 34))
+    p.setColor(QPalette.ToolTipText, QColor(221, 221, 221))
+    p.setColor(QPalette.PlaceholderText, QColor(140, 140, 140))
+    p.setColor(QPalette.Highlight, QColor(89, 160, 255))
+    p.setColor(QPalette.HighlightedText, QColor(15, 15, 15))
+    p.setColor(QPalette.Disabled, QPalette.Text, QColor(120, 120, 120))
+    p.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(120, 120, 120))
+    p.setColor(QPalette.Disabled, QPalette.WindowText, QColor(120, 120, 120))
+    return p
 
 
 def _install_sigint_handler() -> None:
@@ -87,6 +108,7 @@ def run_gui() -> None:
 
     app = QApplication(sys.argv)
     app.setStyle('Fusion')
+    app.setPalette(_dark_palette())
     app.setStyleSheet(APP_STYLESHEET)
     _install_sigint_handler()
 
