@@ -33,8 +33,9 @@ warnings.filterwarnings(
 from core.cuda_setup import setup_cuda_if_available
 _cuda_paths_configured = setup_cuda_if_available()
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QMessageBox, QWidget
 from PySide6.QtGui import QPalette, QColor
+from PySide6.QtCore import QObject, QEvent
 
 from core.logging_config import setup_logging, get_logger
 from core.temp_file_manager import temp_file_manager
@@ -60,6 +61,38 @@ def _dark_palette() -> QPalette:
     p.setColor(QPalette.Disabled, QPalette.ButtonText, QColor(120, 120, 120))
     p.setColor(QPalette.Disabled, QPalette.WindowText, QColor(120, 120, 120))
     return p
+
+
+def _apply_dark_titlebar(widget) -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+        hwnd = int(widget.winId())
+        value = ctypes.c_int(1)
+        for attr in (20, 19):
+            res = ctypes.windll.dwmapi.DwmSetWindowAttribute(
+                wintypes.HWND(hwnd),
+                ctypes.c_int(attr),
+                ctypes.byref(value),
+                ctypes.sizeof(value),
+            )
+            if res == 0:
+                break
+    except Exception:
+        pass
+
+
+class _DarkTitleBarFilter(QObject):
+    def eventFilter(self, obj, event):
+        if (
+            event.type() == QEvent.Show
+            and isinstance(obj, QWidget)
+            and obj.isWindow()
+        ):
+            _apply_dark_titlebar(obj)
+        return False
 
 
 def _install_sigint_handler() -> None:
@@ -110,6 +143,11 @@ def run_gui() -> None:
     app.setStyle('Fusion')
     app.setPalette(_dark_palette())
     app.setStyleSheet(APP_STYLESHEET)
+
+    if sys.platform == "win32":
+        _dark_titlebar_filter = _DarkTitleBarFilter()
+        app.installEventFilter(_dark_titlebar_filter)
+
     _install_sigint_handler()
 
     cuda_ok = _check_cuda_available()
