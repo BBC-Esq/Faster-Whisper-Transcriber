@@ -61,8 +61,7 @@ class SettingsDialog(QDialog):
         self.current_task_mode = current_task_mode
         self.current_audio_device = current_audio_device or {"name": "", "hostapi": ""}
         self.current_whisper_settings = current_whisper_settings or {
-            "without_timestamps": True,
-            "word_timestamps": False,
+            "include_timestamps": False,
             "beam_size": 5,
             "vad_filter": True,
             "condition_on_previous_text": False,
