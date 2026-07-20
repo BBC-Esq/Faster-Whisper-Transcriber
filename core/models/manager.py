@@ -241,6 +241,13 @@ class ModelManager(QObject):
         self._thread_pool = QThreadPool.globalInstance()
         self._current_settings = {}
         self._cancel_event: Optional[threading.Event] = None
+        # Cache for models loaded on behalf of the server API when the
+        # requested settings differ from the GUI-loaded model. Holds at most
+        # one model; guarded by _sync_lock (accessed from server worker and
+        # GUI threads).
+        self._sync_model = None
+        self._sync_model_settings: Optional[dict] = None
+        self._sync_lock = threading.Lock()
 
     def load_model(self, model_name: str, quant: str, device: str) -> None:
         logger.info(f"Requesting model load: {model_name}, {quant}, {device}")
@@ -273,30 +280,45 @@ class ModelManager(QObject):
             return self._model, self._model_version
 
     def get_or_load_model_sync(
-        self, model_name: str, quantization: str, device: str
+        self, model_name: str, quantization: str, device: str,
+        timeout_s: float = 900.0,
     ):
         """Synchronous variant used by the server API when it needs the current
-        model immediately. Returns the cached model if settings match; otherwise
-        blocks on a fresh load via the thread pool."""
-        model, _ = self.get_model()
-        if model is not None and self._current_settings == {
+        model immediately. Returns the GUI-loaded model if settings match, or
+        the cached server-side model if the same settings were requested
+        before; otherwise blocks on a fresh load via the thread pool and
+        caches the result so subsequent requests do not reload it."""
+        requested = {
             "model_name": model_name,
             "quantization_type": quantization,
             "device_type": device,
-        }:
+        }
+        model, _ = self.get_model()
+        if model is not None and self._current_settings == requested:
             return model
 
-        import threading as _threading
+        with self._sync_lock:
+            if self._sync_model is not None and self._sync_model_settings == requested:
+                return self._sync_model
+
         version = str(uuid.uuid4())
-        cancel_event = _threading.Event()
+        cancel_event = threading.Event()
         runnable = _ModelLoaderRunnable(
             model_name, quantization, device, version, cancel_event
         )
         holder: dict = {}
-        done_event = _threading.Event()
+        holder_lock = threading.Lock()
+        done_event = threading.Event()
 
         def _on_loaded(m, *_args):
-            holder["model"] = m
+            with holder_lock:
+                if holder.get("abandoned"):
+                    # The waiter already timed out; nobody will use this model.
+                    _unload_model(m)
+                    del m
+                    gc.collect()
+                else:
+                    holder["model"] = m
             done_event.set()
 
         def _on_error(err, _v):
@@ -312,10 +334,52 @@ class ModelManager(QObject):
         runnable.signals.download_cancelled.connect(_on_cancelled, Qt.DirectConnection)
         self._thread_pool.start(runnable)
 
-        done_event.wait()
+        if not done_event.wait(timeout_s):
+            with holder_lock:
+                if "model" not in holder and "error" not in holder:
+                    holder["abandoned"] = True
+                    cancel_event.set()
+                    raise ModelLoadError(
+                        f"Timed out loading model '{model_name}' "
+                        f"after {timeout_s:.0f}s"
+                    )
         if "error" in holder:
             raise ModelLoadError(holder["error"])
-        return holder.get("model")
+
+        new_model = holder.get("model")
+        if new_model is not None:
+            with self._sync_lock:
+                old = self._sync_model
+                self._sync_model = new_model
+                self._sync_model_settings = dict(requested)
+            # Reference drop only, never a hard unload: an orphaned request
+            # from a previous server instance (stop/restart with a request
+            # still draining) could still be transcribing with the evicted
+            # model. Refcounting frees it, releasing VRAM, once the last
+            # user is done.
+            if old is not None and old is not new_model:
+                del old
+                gc.collect()
+            if self._current_settings == requested:
+                # The GUI finished loading the same settings while our load
+                # was in flight; future requests will take the GUI model, so
+                # drop the now-redundant cached copy (this request keeps its
+                # own reference).
+                self.clear_sync_cache()
+        return new_model
+
+    def clear_sync_cache(self) -> None:
+        """Drop the server-side cached model. Reference drop only: this can
+        run on the GUI thread while a server request is still transcribing
+        with the cached model, so refcounting frees it (releasing VRAM) once
+        the request finishes."""
+        with self._sync_lock:
+            old = self._sync_model
+            self._sync_model = None
+            self._sync_model_settings = None
+        if old is not None:
+            del old
+            gc.collect()
 
     def _on_download_started(
         self, model_name: str, total_bytes: int, version: str
@@ -364,6 +428,9 @@ class ModelManager(QObject):
             "quantization_type": quant,
             "device_type": device,
         }
+        # The GUI-loaded model changed; any server-side cached model is
+        # either redundant now or based on stale defaults.
+        self.clear_sync_cache()
         logger.info(f"Model loaded successfully: {name}")
         self.model_loaded.emit(name, quant, device)
 
@@ -385,6 +452,7 @@ class ModelManager(QObject):
         logger.info(f"[SHUTDOWN]   MM waitForDone(5000): {_time.perf_counter() - _t:.3f}s")
 
         _t = _time.perf_counter()
+        self.clear_sync_cache()
         with QMutexLocker(self._model_mutex):
             if self._model is not None:
                 _unload_model(self._model)

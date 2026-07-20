@@ -21,6 +21,7 @@ class ServerManager(QObject):
         self._server = None
         self._thread: Optional[threading.Thread] = None
         self._port: int = 0
+        self._model_manager = None
 
     def start_server(
         self, port: int, model_manager, default_settings: TranscriptionSettings
@@ -37,6 +38,7 @@ class ServerManager(QObject):
                 model_manager=model_manager,
                 default_settings=default_settings,
             )
+            self._model_manager = model_manager
 
             app = create_app()
             config = uvicorn.Config(
@@ -90,6 +92,11 @@ class ServerManager(QObject):
             self._thread = None
 
         self._server = None
+
+        if self._model_manager is not None:
+            # A model loaded only for server requests is useless once the
+            # server is off; drop the cached reference so it can be freed.
+            self._model_manager.clear_sync_cache()
 
         if was_running:
             logger.info("Server stopped")
