@@ -105,6 +105,7 @@ class TranscriberController(QObject):
         )
         self.audio_manager.audio_ready.connect(self._on_audio_ready)
         self.audio_manager.audio_error.connect(self._on_audio_error)
+        self.audio_manager.audio_warning.connect(self._on_audio_warning)
 
         self.transcription_service.transcription_started.connect(
             lambda: self.update_button_signal.emit("Transcribing...")
@@ -279,6 +280,11 @@ class TranscriberController(QObject):
         logger.error(f"Audio error: {error}")
         self.enable_widgets_signal.emit(True)
         self.error_occurred.emit("Audio Error", error)
+
+    @Slot(str)
+    def _on_audio_warning(self, warning: str) -> None:
+        logger.warning(f"Audio warning: {warning}")
+        self.error_occurred.emit("Audio Warning", warning)
 
     # --- Transcription signals ---
 

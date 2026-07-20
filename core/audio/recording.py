@@ -20,6 +20,7 @@ logger = get_logger(__name__)
 class RecordingThread(QThread):
     update_status_signal = Signal(str)
     recording_error = Signal(str)
+    recording_warning = Signal(str)
     recording_finished = Signal(str)
 
     def __init__(
@@ -116,7 +117,10 @@ class RecordingThread(QThread):
                     f"Recording completed with {self._overflow_count} overflow/underflow events. "
                     f"Last status: {self._stream_error}"
                 )
-                self.recording_error.emit(
+                # The recording still completed and will be transcribed, so this
+                # is a warning; recording_error is reserved for fatal failures
+                # where no audio file will be delivered.
+                self.recording_warning.emit(
                     f"Audio stream had {self._overflow_count} overflow/underflow events. "
                     f"Some audio may be missing. Try increasing latency/buffer."
                 )

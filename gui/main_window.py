@@ -535,6 +535,8 @@ class MainWindow(QMainWindow):
             self._on_append_mode_changed
         )
 
+        self.controller.audio_manager.audio_error.connect(self._on_audio_failed)
+
         self.controller.update_button_signal.connect(self._on_button_text_update)
         self.controller.enable_widgets_signal.connect(self.set_widgets_enabled)
         self.controller.text_ready_signal.connect(self._on_transcription_ready)
@@ -787,6 +789,7 @@ class MainWindow(QMainWindow):
         return (
             self.controller.is_transcribing()
             or self.controller.is_batch_processing()
+            or self.controller.audio_manager.is_busy()
             or self.server_manager.is_transcription_active()
         )
 
@@ -1023,6 +1026,11 @@ class MainWindow(QMainWindow):
             self.record_button.setText("Processing...")
             update_button_property(self.record_button, "recording", False)
         else:
+            # Covers the gap between stopping a recording and its audio being
+            # handed to the transcription service; a second recording started
+            # in that window would collide with the pending one.
+            if self.controller.audio_manager.is_busy():
+                return
             if self.controller.start_recording():
                 self._pending_output_mode = "clipboard"
                 self._pending_output_format = "txt"
@@ -1040,6 +1048,22 @@ class MainWindow(QMainWindow):
             samples = self.controller.audio_manager.get_latest_samples()
             if samples is not None:
                 self.record_button.update_waveform(samples)
+
+    @Slot(str)
+    def _on_audio_failed(self, _error: str) -> None:
+        # Fatal recording failure: no audio file is coming, so reset any
+        # leftover recording UI state. If the audio manager is busy again, a
+        # NEW recording was legitimately started (e.g. via the hotkey while
+        # the error dialog's nested event loop was running) and its state
+        # must not be disturbed.
+        if self.controller.audio_manager.is_busy():
+            return
+        if self.is_recording:
+            self._sample_timer.stop()
+            self.is_recording = False
+            update_button_property(self.record_button, "recording", False)
+        self.record_button.setText("Click to Record")
+        self.record_button.set_state(WaveformButton.IDLE)
 
     @Slot()
     def _cancel_transcription(self) -> None:
@@ -1069,6 +1093,7 @@ class MainWindow(QMainWindow):
             return True
         if (
             self.is_recording
+            or self.controller.audio_manager.is_busy()
             or self.controller.is_transcribing()
             or self.controller.is_batch_processing()
         ):
@@ -1141,6 +1166,13 @@ class MainWindow(QMainWindow):
 
     @Slot(list, str, str, int, str)
     def _on_batch_start(self, files, fmt, output_dir, batch_size, task_mode) -> None:
+        # The file panel's busy check ran before its confirmation dialog; a
+        # recording or transcription may have started while that dialog's
+        # event loop was running, so re-check before actually starting.
+        if self._reject_new_transcription():
+            self.file_panel.on_batch_completed("Not started")
+            return
+
         include_timestamps = config_manager.get_value("include_timestamps", False)
         if fmt in ("srt", "vtt"):
             include_timestamps = True
@@ -1260,10 +1292,6 @@ class MainWindow(QMainWindow):
                     else text
                 )
                 app.clipboard().setText(clip_text)
-
-        if self.is_recording:
-            self.is_recording = False
-            update_button_property(self.record_button, "recording", False)
 
         self.file_panel.on_single_file_done()
 

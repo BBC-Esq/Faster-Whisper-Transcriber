@@ -18,6 +18,7 @@ class AudioManager(QObject):
     recording_stopped = Signal()
     audio_ready = Signal(str)
     audio_error = Signal(str)
+    audio_warning = Signal(str)
 
     def __init__(self, samplerate: int = 44_100, channels: int = 1, dtype: str = "int16", device_id: int | None = None):
         super().__init__()
@@ -27,12 +28,25 @@ class AudioManager(QObject):
         self.device_id = device_id
         self._recording_thread: Optional[RecordingThread] = None
         self._current_temp_file: Optional[Path] = None
+        # Lifecycle state, only ever touched on the main thread:
+        # "idle" -> "recording" (start) -> "stopping" (stop requested) -> "idle"
+        # (recording_finished or recording_error delivered). While not "idle",
+        # a previous recording's audio has not yet been handed off, so a new
+        # recording or transcription must not start.
+        self._state: str = "idle"
 
     def set_device(self, device_id: int | None, samplerate: int, channels: int, dtype: str) -> None:
         self.device_id = device_id
         self.samplerate = samplerate
         self.channels = channels
         self.dtype = dtype
+
+    def is_busy(self) -> bool:
+        """True while a recording is running, stopping, or its result has not
+        yet been delivered via audio_ready/audio_error."""
+        if self._state != "idle":
+            return True
+        return self._recording_thread is not None and self._recording_thread.isRunning()
 
     def start_recording(self) -> bool:
         if self._recording_thread and self._recording_thread.isRunning():
@@ -51,7 +65,9 @@ class AudioManager(QObject):
                 device=self.device_id,
             )
             self._recording_thread.recording_error.connect(self._on_recording_error)
+            self._recording_thread.recording_warning.connect(self._on_recording_warning)
             self._recording_thread.recording_finished.connect(self._on_recording_finished)
+            self._state = "recording"
             self._recording_thread.start()
 
             self.recording_started.emit()
@@ -59,16 +75,24 @@ class AudioManager(QObject):
             return True
         except Exception as e:
             logger.exception("Failed to start recording")
+            self._state = "idle"
             self.audio_error.emit(f"Failed to start recording: {e}")
             return False
 
     @Slot(str)
     def _on_recording_error(self, error: str) -> None:
         logger.error(f"Recording error: {error}")
+        self._state = "idle"
         self.audio_error.emit(error)
 
     @Slot(str)
+    def _on_recording_warning(self, warning: str) -> None:
+        logger.warning(f"Recording warning: {warning}")
+        self.audio_warning.emit(warning)
+
+    @Slot(str)
     def _on_recording_finished(self, audio_file: str) -> None:
+        self._state = "idle"
         try:
             self._current_temp_file = None
             logger.info(f"Audio saved to: {audio_file}")
@@ -80,6 +104,7 @@ class AudioManager(QObject):
     def stop_recording(self) -> None:
         if self._recording_thread and self._recording_thread.isRunning():
             self._recording_thread.stop()
+            self._state = "stopping"
             logger.info("Recording stop requested")
             self.recording_stopped.emit()
 
@@ -113,4 +138,5 @@ class AudioManager(QObject):
             temp_file_manager.release(self._current_temp_file)
             self._current_temp_file = None
 
+        self._state = "idle"
         logger.debug("AudioManager cleanup complete")
