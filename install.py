@@ -21,6 +21,15 @@ libs = [
     "pyside6", # required by my program
     "sounddevice", # required by my program
     "sympy==1.13.3", # set to known torch compatibility
+    # HTTP API (server mode) - keep in sync with installer/requirements-*.txt
+    "fastapi",
+    "pydantic",
+    "python-multipart",
+    "uvicorn",
+    # Model download + config - keep in sync with installer/requirements-*.txt
+    "huggingface_hub",
+    "pyyaml",
+    "tqdm",
 ]
 
 
