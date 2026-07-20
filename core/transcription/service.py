@@ -180,7 +180,6 @@ class TranscriptionService(QObject):
         self._cancel_event: threading.Event | None = None
         self._is_transcribing = False
         self._whisper_params: dict = {}
-        self._timestamps_override: bool | None = None
 
     def set_model_version_provider(self, func) -> None:
         self._get_model_version_func = func
@@ -188,9 +187,6 @@ class TranscriptionService(QObject):
     def set_whisper_params(self, params: dict) -> None:
         self._whisper_params = dict(params)
         logger.debug(f"Whisper params updated: {self._whisper_params}")
-
-    def set_timestamps_override(self, without_timestamps: bool | None) -> None:
-        self._timestamps_override = without_timestamps
 
     def is_transcribing(self) -> bool:
         return self._is_transcribing
@@ -209,6 +205,7 @@ class TranscriptionService(QObject):
         audio_file: str | Path,
         is_temp_file: bool = True,
         batch_size: int | None = None,
+        without_timestamps_override: bool | None = None,
     ) -> None:
         if not model:
             error_msg = "No model available for transcription"
@@ -234,9 +231,8 @@ class TranscriptionService(QObject):
             self._is_transcribing = True
 
             params = dict(self._whisper_params)
-            if self._timestamps_override is not None:
-                params["without_timestamps"] = self._timestamps_override
-            self._timestamps_override = None
+            if without_timestamps_override is not None:
+                params["without_timestamps"] = without_timestamps_override
 
             runnable = _TranscriptionRunnable(
                 model=model,

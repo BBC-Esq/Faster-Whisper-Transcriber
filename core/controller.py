@@ -151,7 +151,12 @@ class TranscriberController(QObject):
     def is_transcribing(self) -> bool:
         return self.transcription_service.is_transcribing()
 
-    def transcribe_file(self, file_path: str, batch_size: int | None = None) -> None:
+    def transcribe_file(
+        self,
+        file_path: str,
+        batch_size: int | None = None,
+        without_timestamps_override: bool | None = None,
+    ) -> None:
         model, model_version = self.model_manager.get_model()
         if model and model_version:
             self.enable_widgets_signal.emit(False)
@@ -164,6 +169,7 @@ class TranscriberController(QObject):
                 file_path,
                 is_temp_file=False,
                 batch_size=batch_size,
+                without_timestamps_override=without_timestamps_override,
             )
         else:
             self.error_occurred.emit(

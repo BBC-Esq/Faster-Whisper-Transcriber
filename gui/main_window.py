@@ -1115,17 +1115,18 @@ class MainWindow(QMainWindow):
         self._pending_source_file = file_path
 
         # Force timestamps on for formats that require them
-        if output_format in ("srt", "vtt"):
-            self.controller.transcription_service.set_timestamps_override(False)
-        else:
-            self.controller.transcription_service.set_timestamps_override(None)
+        override = False if output_format in ("srt", "vtt") else None
 
         logger.info(
             f"Transcribing: {file_path} (batch={batch_size}, "
             f"mode={output_mode}, fmt={output_format})"
         )
         self.record_button.setText("Transcribing...")
-        self.controller.transcribe_file(file_path, batch_size=batch_size)
+        self.controller.transcribe_file(
+            file_path,
+            batch_size=batch_size,
+            without_timestamps_override=override,
+        )
 
     @Slot(object)
     def _on_result_ready(self, result) -> None:
