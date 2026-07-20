@@ -218,6 +218,17 @@ class TranscriptionService(QObject):
                 temp_file_manager.release(Path(audio_file))
             return
 
+        # Defense in depth: overlapping jobs would clobber _cancel_event (so
+        # Cancel only reaches the newest job) and the first completion would
+        # clear _is_transcribing while the other job still runs.
+        if self._is_transcribing:
+            error_msg = "A transcription is already in progress"
+            logger.error(error_msg)
+            self.transcription_error.emit(error_msg)
+            if is_temp_file:
+                temp_file_manager.release(Path(audio_file))
+            return
+
         try:
             self._cancel_event = threading.Event()
             self._is_transcribing = True
