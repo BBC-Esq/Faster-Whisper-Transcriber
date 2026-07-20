@@ -76,13 +76,23 @@ class AudioManager(QObject):
         except Exception as e:
             logger.exception("Failed to start recording")
             self._state = "idle"
+            self._release_current_temp_file()
             self.audio_error.emit(f"Failed to start recording: {e}")
             return False
+
+    def _release_current_temp_file(self) -> None:
+        if self._current_temp_file:
+            temp_file_manager.release(self._current_temp_file)
+            self._current_temp_file = None
 
     @Slot(str)
     def _on_recording_error(self, error: str) -> None:
         logger.error(f"Recording error: {error}")
         self._state = "idle"
+        # No audio file will be delivered; release the temp WAV now, before
+        # emitting (an error-dialog event loop could start a new recording
+        # that repoints _current_temp_file).
+        self._release_current_temp_file()
         self.audio_error.emit(error)
 
     @Slot(str)

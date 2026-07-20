@@ -270,6 +270,8 @@ class TranscriberController(QObject):
                 batch_size=None,
             )
         else:
+            from core.temp_file_manager import temp_file_manager
+            temp_file_manager.release(Path(audio_file))
             self.enable_widgets_signal.emit(True)
             self.error_occurred.emit(
                 "Audio Error", "No model is loaded to process audio"
