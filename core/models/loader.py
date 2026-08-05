@@ -40,11 +40,13 @@ class _ProgressTqdm(tqdm):
         progress_callback=None,
         completed_bytes=0,
         total_all_bytes=0,
+        cancel_event=None,
         **kwargs,
     ):
         self._progress_callback = progress_callback
         self._completed_bytes = completed_bytes
         self._total_all_bytes = total_all_bytes
+        self._cancel_event = cancel_event
         kwargs.pop("name", None)
         if "file" in kwargs and kwargs["file"] is None:
             kwargs["file"] = _NullWriter()
@@ -52,18 +54,21 @@ class _ProgressTqdm(tqdm):
 
     def update(self, n=1):
         super().update(n)
+        if self._cancel_event is not None and self._cancel_event.is_set():
+            raise InterruptedError("Download cancelled")
         if self._progress_callback and self._total_all_bytes > 0:
             self._progress_callback(
                 self._completed_bytes + int(self.n), self._total_all_bytes
             )
 
 
-def _make_tqdm_class(callback, completed, total_all):
+def _make_tqdm_class(callback, completed, total_all, cancel_event=None):
     class _BoundTqdm(_ProgressTqdm):
         def __init__(self, *args, **kwargs):
             kwargs["progress_callback"] = callback
             kwargs["completed_bytes"] = completed
             kwargs["total_all_bytes"] = total_all
+            kwargs["cancel_event"] = cancel_event
             super().__init__(*args, **kwargs)
 
     return _BoundTqdm
@@ -262,15 +267,21 @@ def download_model_files(
 
         try:
             tqdm_cls = (
-                _make_tqdm_class(progress_callback, downloaded_bytes, total_bytes)
-                if progress_callback
+                _make_tqdm_class(
+                    progress_callback, downloaded_bytes, total_bytes, cancel_event
+                )
+                if (progress_callback or cancel_event)
                 else None
             )
             dl_kwargs = {"repo_id": repo_id, "filename": filename}
             if tqdm_cls:
                 dl_kwargs["tqdm_class"] = tqdm_cls
             hf_hub_download(**dl_kwargs)
+        except InterruptedError:
+            raise
         except Exception as file_err:
+            if cancel_event and cancel_event.is_set():
+                raise InterruptedError("Download cancelled") from file_err
             logger.warning(
                 f"Per-file download failed for '{filename}': {file_err}. "
                 f"Falling back to snapshot_download."
