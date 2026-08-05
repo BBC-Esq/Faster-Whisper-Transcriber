@@ -1094,14 +1094,15 @@ class MainWindow(QMainWindow):
             return True
         if (
             self.is_recording
+            or not self.record_button.isEnabled()
             or self.controller.audio_manager.is_busy()
             or self.controller.is_transcribing()
             or self.controller.is_batch_processing()
         ):
             QMessageBox.information(
                 self, "Busy",
-                "A recording or transcription is already in progress. "
-                "Please finish it first.",
+                "A recording, transcription, or model load is already in "
+                "progress. Please wait for it to finish.",
             )
             return True
         return False
