@@ -81,7 +81,7 @@ def _to_mono_float32(audio: np.ndarray) -> np.ndarray:
     elif audio.max() > 1.0 or audio.min() < -1.0:
         max_val = max(abs(float(audio.max())), abs(float(audio.min())))
         if max_val > 0:
-            audio = audio / 32768.0
+            audio = audio / max_val
     return audio
 
 
