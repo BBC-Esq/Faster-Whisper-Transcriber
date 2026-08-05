@@ -324,6 +324,10 @@ def _resolve_model_key(
     return f"{target_name} - {target_quant}", info
 
 
+def _clamp(value: int, low: int, high: int) -> int:
+    return max(low, min(high, value))
+
+
 def _build_settings(
     model_name: Optional[str],
     quantization: Optional[str],
@@ -356,7 +360,10 @@ def _build_settings(
             word_timestamps if word_timestamps is not None
             else defaults.word_timestamps
         ),
-        beam_size=beam_size if beam_size is not None else defaults.beam_size,
+        beam_size=(
+            _clamp(int(beam_size), 1, 20) if beam_size is not None
+            else defaults.beam_size
+        ),
         vad_filter=(
             vad_filter if vad_filter is not None else defaults.vad_filter
         ),
@@ -365,7 +372,10 @@ def _build_settings(
             if condition_on_previous_text is not None
             else defaults.condition_on_previous_text
         ),
-        batch_size=batch_size if batch_size is not None else defaults.batch_size,
+        batch_size=(
+            _clamp(int(batch_size), 1, 128) if batch_size is not None
+            else defaults.batch_size
+        ),
         recursive=False,
         selected_extensions=[],
     )
