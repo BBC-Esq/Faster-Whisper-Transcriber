@@ -25,9 +25,6 @@ class ConfigManager:
             "int16", "float16", "float32", "bfloat16"
         },
         "output_formats": {"txt", "srt", "vtt", "json"},
-        "single_file_output_modes": {
-            "clipboard", "save_to_source", "save_and_clipboard", "save_to_custom"
-        },
     }
 
     DEFAULT_CONFIG = {
@@ -39,20 +36,12 @@ class ConfigManager:
         "supported_quantizations": {"cpu": [], "cuda": []},
         "curate_transcription": True,
         "clipboard_append_mode": False,
-        "without_timestamps": True,
         "include_timestamps": False,
         "word_timestamps": False,
         "beam_size": 5,
         "vad_filter": True,
         "condition_on_previous_text": False,
         "output_format": "txt",
-        "single_file_output_mode": "clipboard",
-        "output_directory": "",
-        "batch_recursive": False,
-        "batch_extensions": [
-            ".aac", ".amr", ".asf", ".avi", ".flac", ".m4a",
-            ".mkv", ".mp3", ".mp4", ".ogg", ".wav", ".webm", ".wma",
-        ],
         "server_mode_enabled": False,
         "server_port": 8765,
     }
@@ -65,15 +54,11 @@ class ConfigManager:
         "show_clipboard_window": {"type": bool},
         "curate_transcription": {"type": bool},
         "clipboard_append_mode": {"type": bool},
-        "without_timestamps": {"type": bool},
         "word_timestamps": {"type": bool},
         "beam_size": {"type": int, "validator": "_validate_beam_size"},
         "vad_filter": {"type": bool},
         "condition_on_previous_text": {"type": bool},
         "output_format": {"type": str, "options": "output_formats"},
-        "single_file_output_mode": {"type": str, "options": "single_file_output_modes"},
-        "output_directory": {"type": str},
-        "batch_recursive": {"type": bool},
         "server_mode_enabled": {"type": bool},
         "server_port": {"type": int, "validator": "_validate_port"},
     }
