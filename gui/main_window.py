@@ -1075,6 +1075,7 @@ class MainWindow(QMainWindow):
         self.record_button.set_state(WaveformButton.IDLE)
         self.cancel_button.setEnabled(True)
         self.cancel_button.setVisible(False)
+        self.file_panel.on_single_file_done("Cancelled")
 
     def _is_supported_audio_file(self, path: str) -> bool:
         try:

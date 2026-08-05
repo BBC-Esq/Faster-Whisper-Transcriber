@@ -483,11 +483,11 @@ class FilePanelWindow(QWidget):
             self._status_label.setText(message)
         self._batch_had_errors = False
 
-    def on_single_file_done(self) -> None:
+    def on_single_file_done(self, status: str = "Done") -> None:
         self._is_processing = False
         self._start_btn.setEnabled(True)
         self._stop_btn.setEnabled(False)
-        self._status_label.setText("Done")
+        self._status_label.setText(status)
 
     # --- Docking (mirrors ClipboardSideWindow) ---
 
