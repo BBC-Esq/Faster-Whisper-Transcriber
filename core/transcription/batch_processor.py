@@ -27,14 +27,14 @@ def _is_oom_error(exc: Exception) -> bool:
 
 
 def _deduplicated_output_path(output_dir: Path, stem: str, suffix: str,
-                               seen: dict[str, int]) -> Path:
-    key = str(output_dir / stem).lower()
-    if key in seen:
-        seen[key] += 1
-        return output_dir / f"{stem}_{seen[key]}{suffix}"
-    else:
-        seen[key] = 0
-        return output_dir / f"{stem}{suffix}"
+                               claimed: set[str]) -> Path:
+    candidate = output_dir / f"{stem}{suffix}"
+    counter = 0
+    while str(candidate).lower() in claimed:
+        counter += 1
+        candidate = output_dir / f"{stem}_{counter}{suffix}"
+    claimed.add(str(candidate).lower())
+    return candidate
 
 
 class BatchProcessor(QThread):
@@ -70,7 +70,7 @@ class BatchProcessor(QThread):
         timer = QElapsedTimer()
         timer.start()
 
-        seen_names: dict[str, int] = {}
+        claimed_names: set[str] = set()
 
         try:
             batched_model = BatchedInferencePipeline(model=self.model)
@@ -140,7 +140,7 @@ class BatchProcessor(QThread):
                     else:
                         out_dir = audio_file.parent
                     output_file = _deduplicated_output_path(
-                        out_dir, audio_file.stem, out_suffix, seen_names
+                        out_dir, audio_file.stem, out_suffix, claimed_names
                     )
 
                     write_output(result, output_file, self.output_format)
