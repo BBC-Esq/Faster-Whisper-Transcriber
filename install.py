@@ -14,7 +14,7 @@ _gpu_packages = [
 _supported_python_versions = {"cp311", "cp312", "cp313"}
 
 libs = [
-    "ctranslate2==4.7.1",
+    "ctranslate2>=4.8.1,<5",
     "faster-whisper2==2.1.1",
     "psutil", # required by my program
     "pynput", # required by my program
