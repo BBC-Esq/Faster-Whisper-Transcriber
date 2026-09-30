@@ -683,10 +683,11 @@ srt_text <span class="op">=</span> <span class="fn">to_srt</span>(result[<span c
 
 <div class="callout warn">
   <div class="tag">Important</div>
-  <code>.en</code> models and all Distil variants <strong>do not support
-  translation</strong>. If you request <code>task_mode="translate"</code>
-  against one of these models, faster-whisper will raise and the server
-  returns HTTP 500.
+  <code>large-v3-turbo</code>, the <code>.en</code> models and all Distil
+  variants <strong>do not support translation</strong>. If you request
+  <code>task_mode="translate"</code> against one of these models, the server
+  returns HTTP 400. If you leave <code>task_mode</code> out and the app's
+  default is translate, the server transcribes instead.
 </div>
 </section>
 
@@ -844,7 +845,10 @@ curl -F <span class="str">"audio=@my_audio.mp3"</span> \
 {<span class="str">"detail"</span>: <span class="str">"Empty audio data"</span>}
 
 <span class="cmt">// Unreadable audio format</span>
-{<span class="str">"detail"</span>: <span class="str">"Failed to process audio: [decoder error details]"</span>}</code></pre>
+{<span class="str">"detail"</span>: <span class="str">"Failed to process audio: [decoder error details]"</span>}
+
+<span class="cmt">// Translate on a model that cannot translate</span>
+{<span class="str">"detail"</span>: <span class="str">"Model 'large-v3-turbo' does not support translation. Use task_mode='transcribe' or a model that can translate."</span>}</code></pre>
 
 <h3>422 &mdash; Validation Error</h3>
 <pre><code>{
@@ -865,10 +869,7 @@ curl -F <span class="str">"audio=@my_audio.mp3"</span> \
 
 <h3>500 &mdash; Internal Server Error</h3>
 <pre><code><span class="cmt">// CUDA OOM</span>
-{<span class="str">"detail"</span>: <span class="str">"Transcription failed: CUDA out of memory. Tried to allocate 512.00 MiB..."</span>}
-
-<span class="cmt">// Translate on an .en / Distil model</span>
-{<span class="str">"detail"</span>: <span class="str">"Transcription failed: This model is English-only and does not support translation."</span>}</code></pre>
+{<span class="str">"detail"</span>: <span class="str">"Transcription failed: CUDA out of memory. Tried to allocate 512.00 MiB..."</span>}</code></pre>
 
 <h3>503 &mdash; Service Unavailable</h3>
 <pre><code>{<span class="str">"detail"</span>: <span class="str">"Server shutting down"</span>}</code></pre>
@@ -1155,7 +1156,7 @@ Uses faster-whisper with CTranslate2-converted checkpoints from HuggingFace unde
 | medium.en / small.en / base.en / tiny.en     | Yes          | No          | English-only; pass language="en"             |
 | distil-whisper-large-v3 / medium.en / small.en | Varies     | No          | Distilled variants: faster, English-focused  |
 
-Important: .en models and all Distil variants DO NOT support translation. Requesting task_mode="translate" on one returns HTTP 500.
+Important: large-v3-turbo, the .en models and all Distil variants DO NOT support translation. Requesting task_mode="translate" on one returns HTTP 400. If task_mode is omitted and the app's default is translate, the server transcribes instead.
 
 ## 8. Checking Server Status
 
@@ -1204,7 +1205,7 @@ curl -F "audio=@my_audio.mp3" \\
 | 200  | -           | Success      | Use result["text"] and result["segments"]         |
 | 400  | string      | Bad input    | Fix model, language, task, or audio               |
 | 422  | array       | Missing field| Check that audio is included                      |
-| 500  | string      | Model error  | Check VRAM or model/task compatibility            |
+| 500  | string      | Model error  | Check VRAM or language/model compatibility        |
 | 503  | string      | Server stop  | Wait and retry                                    |
 
 ## 12. Complete Example

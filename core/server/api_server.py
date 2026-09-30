@@ -346,10 +346,19 @@ def _build_settings(
 
     model_key, model_info = _resolve_model_key(model_name, quantization, defaults)
 
+    resolved_task = task_mode or defaults.task_mode
+    if resolved_task == "translate" and not model_info["supports_translation"]:
+        if task_mode:
+            raise ValueError(
+                f"Model '{model_info['name']}' does not support translation. "
+                f"Use task_mode='transcribe' or a model that can translate."
+            )
+        resolved_task = "transcribe"
+
     settings = TranscriptionSettings(
         model_key=model_key,
         device=device or defaults.device,
-        task_mode=task_mode or defaults.task_mode,
+        task_mode=resolved_task,
         language=language if language is not None else defaults.language,
         output_format=output_format or defaults.output_format,
         include_timestamps=(
