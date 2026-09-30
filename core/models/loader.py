@@ -14,6 +14,7 @@ from tqdm.auto import tqdm
 
 from core.logging_config import get_logger
 from core.exceptions import ModelLoadError
+from core.models.metadata import ModelMetadata
 
 logger = get_logger(__name__)
 
@@ -75,6 +76,9 @@ def _make_tqdm_class(callback, completed, total_all, cancel_event=None):
 
 
 def _make_repo_string(model_name: str, quantization_type: str) -> str:
+    info = ModelMetadata.get_model_info(model_name)
+    if info and info.repo_name:
+        return f"ctranslate2-4you/{info.repo_name}-ct2-{quantization_type}"
     if model_name.startswith("distil-whisper"):
         return f"ctranslate2-4you/{model_name}-ct2-{quantization_type}"
     return f"ctranslate2-4you/whisper-{model_name}-ct2-{quantization_type}"

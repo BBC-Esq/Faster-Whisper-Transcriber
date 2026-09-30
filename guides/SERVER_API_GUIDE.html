@@ -501,7 +501,7 @@ response <span class="op">=</span> requests.<span class="fn">post</span>(
     <tr><th>Parameter</th><th>Type</th><th>Description</th><th>Values</th></tr>
   </thead>
   <tbody>
-    <tr><td><code>model</code></td><td>string</td><td>Name of the Whisper checkpoint</td><td><code>"large-v3"</code>, <code>"large-v3-turbo"</code>, <code>"medium"</code>, <code>"medium.en"</code>, <code>"small"</code>, <code>"small.en"</code>, <code>"base"</code>, <code>"base.en"</code>, <code>"tiny"</code>, <code>"tiny.en"</code>, <code>"distil-whisper-large-v3"</code>, <code>"distil-whisper-medium.en"</code>, <code>"distil-whisper-small.en"</code></td></tr>
+    <tr><td><code>model</code></td><td>string</td><td>Name of the Whisper checkpoint</td><td><code>"large-v3"</code>, <code>"large-v3-turbo"</code>, <code>"medium"</code>, <code>"medium.en"</code>, <code>"small"</code>, <code>"small.en"</code>, <code>"base"</code>, <code>"base.en"</code>, <code>"tiny"</code>, <code>"tiny.en"</code>, <code>"distil-whisper-large-v3"</code>, <code>"distil-whisper-large-v3.5"</code>, <code>"distil-whisper-medium.en"</code>, <code>"distil-whisper-small.en"</code></td></tr>
     <tr><td><code>quantization</code></td><td>string</td><td>CTranslate2 <code>compute_type</code>. Which pre-converted variant of the model to load.</td><td><code>"float32"</code>, <code>"float16"</code>, <code>"bfloat16"</code>, <code>"int8"</code>, <code>"int8_float16"</code>, <code>"int8_bfloat16"</code>, <code>"int8_float32"</code></td></tr>
     <tr><td><code>device</code></td><td>string</td><td>CPU or GPU</td><td><code>"cuda"</code>, <code>"cpu"</code></td></tr>
     <tr><td><code>language</code></td><td>string</td><td>ISO 639-1 language code. Omit or leave empty to auto-detect.</td><td><code>"en"</code>, <code>"fr"</code>, <code>"es"</code>, <code>"de"</code>, <code>"zh"</code>, &hellip; (99 Whisper languages)</td></tr>
@@ -667,7 +667,7 @@ srt_text <span class="op">=</span> <span class="fn">to_srt</span>(result[<span c
 <section id="models">
 <h2>7. Model Notes</h2>
 
-<p>This backend uses <a href="https://github.com/SYSTRAN/faster-whisper">faster-whisper</a>, which loads CTranslate2-converted Whisper checkpoints. Models are pulled on-demand from HuggingFace under <code>ctranslate2-4you/whisper-&lt;model&gt;-ct2-&lt;quantization&gt;</code> (or <code>ctranslate2-4you/distil-whisper-&lt;model&gt;-ct2-&lt;quantization&gt;</code> for the Distil variants).</p>
+<p>This backend uses <a href="https://github.com/SYSTRAN/faster-whisper">faster-whisper</a>, which loads CTranslate2-converted Whisper checkpoints. Models are pulled on-demand from HuggingFace under <code>ctranslate2-4you/whisper-&lt;model&gt;-ct2-&lt;quantization&gt;</code> (or <code>ctranslate2-4you/distil-whisper-&lt;model&gt;-ct2-&lt;quantization&gt;</code> for the Distil variants, except <code>distil-whisper-large-v3.5</code>, which is under <code>ctranslate2-4you/whisper-distil-large-v3.5-ct2-&lt;quantization&gt;</code>).</p>
 
 <table>
   <thead>
@@ -1059,7 +1059,8 @@ Every setting is optional.
 |----------------------------|---------|-----------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------|
 | model                      | string  | Whisper checkpoint name                                                                                                           | "tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium",   |
 |                            |         |                                                                                                                                   | "medium.en", "large-v3", "large-v3-turbo", "distil-whisper-large-v3",  |
-|                            |         |                                                                                                                                   | "distil-whisper-medium.en", "distil-whisper-small.en"                  |
+|                            |         |                                                                                                                                   | "distil-whisper-large-v3.5", "distil-whisper-medium.en",               |
+|                            |         |                                                                                                                                   | "distil-whisper-small.en"                                              |
 | quantization               | string  | CTranslate2 compute_type                                                                                                          | "float32", "float16", "bfloat16", "int8", "int8_float16", ...          |
 | device                     | string  | CPU or GPU                                                                                                                        | "cuda", "cpu"                                                          |
 | language                   | string  | ISO 639-1 code. Omit or empty to auto-detect.                                                                                     | "en", "fr", "es", "de", "zh", ... (99 Whisper languages)               |
@@ -1145,7 +1146,7 @@ with open("lecture.mp3", "rb") as f:
 
 ## 7. Model Notes
 
-Uses faster-whisper with CTranslate2-converted checkpoints from HuggingFace under ctranslate2-4you/whisper-<model>-ct2-<quantization> (or distil-whisper-<model>-ct2-<quantization> for Distil variants).
+Uses faster-whisper with CTranslate2-converted checkpoints from HuggingFace under ctranslate2-4you/whisper-<model>-ct2-<quantization> (or distil-whisper-<model>-ct2-<quantization> for Distil variants, except distil-whisper-large-v3.5, which is under ctranslate2-4you/whisper-distil-large-v3.5-ct2-<quantization>).
 
 | Model family                                 | English-only | Translation | Notes                                        |
 |----------------------------------------------|--------------|-------------|----------------------------------------------|

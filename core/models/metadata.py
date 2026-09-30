@@ -7,6 +7,7 @@ class ModelInfo:
     name: str
     supports_translation: bool
     quantization_overrides: Dict[str, List[str]] | None = None
+    repo_name: str | None = None
 
 class ModelMetadata:
 
@@ -24,6 +25,7 @@ class ModelMetadata:
         ModelInfo("distil-whisper-small.en", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}),
         ModelInfo("distil-whisper-medium.en", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}),
         ModelInfo("distil-whisper-large-v3", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}),
+        ModelInfo("distil-whisper-large-v3.5", False, {"cpu": ["float32"], "cuda": ["float16", "bfloat16", "float32"]}, repo_name="whisper-distil-large-v3.5"),
     ]
 
     _MODEL_MAP: Dict[str, ModelInfo] = {m.name: m for m in _MODELS}
