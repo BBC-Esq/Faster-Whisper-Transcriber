@@ -674,10 +674,11 @@ srt_text <span class="op">=</span> <span class="fn">to_srt</span>(result[<span c
     <tr><th>Model family</th><th>English-only?</th><th>Translation?</th><th>Notes</th></tr>
   </thead>
   <tbody>
-    <tr><td>large-v3 / large-v3-turbo</td><td>No</td><td>Yes</td><td>Multilingual; turbo is a fine-tune with fewer decoder layers.</td></tr>
-    <tr><td>medium / small / base / tiny</td><td>No</td><td>Yes</td><td>Multilingual; smaller = faster + less VRAM / RAM.</td></tr>
+    <tr><td>large-v3</td><td>No</td><td>Yes</td><td>Multilingual; best translation quality.</td></tr>
+    <tr><td>large-v3-turbo</td><td>No</td><td>No</td><td>Multilingual transcription only. A large-v3 fine-tune with 4 decoder layers; asked to translate, it returns the source language.</td></tr>
+    <tr><td>medium / small / base / tiny</td><td>No</td><td>Yes</td><td>Multilingual; smaller = faster + less VRAM / RAM, and translation quality drops with size.</td></tr>
     <tr><td>medium.en / small.en / base.en / tiny.en</td><td>Yes</td><td>No</td><td>English-only. Slightly better English accuracy at the same size. Pass <code>language="en"</code>.</td></tr>
-    <tr><td>distil-whisper-large-v3 / medium.en / small.en</td><td>Varies</td><td>No</td><td>Distilled variants: faster, smaller, English-focused.</td></tr>
+    <tr><td>distil-whisper-large-v3 / large-v3.5 / medium.en / small.en</td><td>Yes</td><td>No</td><td>Distilled variants: faster and smaller. Trained on English only; other languages come out as rough English instead of a transcript.</td></tr>
   </tbody>
 </table>
 
@@ -776,7 +777,7 @@ models <span class="op">=</span> r.<span class="fn">json</span>()
   Unlike the WhisperS2T sister project, this <code>/models</code> endpoint returns <strong>one entry per base model name</strong>, not one entry per <code>(name, quantization)</code> pair. Use the <code>quantization</code> field on <code>/transcribe</code> to pick the precision.
 </div>
 
-<p>Example &mdash; find all multilingual models:</p>
+<p>Example &mdash; find all models that can translate:</p>
 
 <pre><code>models <span class="op">=</span> requests.<span class="fn">get</span>(<span class="str">"http://127.0.0.1:8765/models"</span>).<span class="fn">json</span>()
 
@@ -1149,12 +1150,13 @@ with open("lecture.mp3", "rb") as f:
 
 Uses faster-whisper with CTranslate2-converted checkpoints from HuggingFace under ctranslate2-4you/whisper-<model>-ct2-<quantization> (or distil-whisper-<model>-ct2-<quantization> for Distil variants, except distil-whisper-large-v3.5, which is under ctranslate2-4you/whisper-distil-large-v3.5-ct2-<quantization>).
 
-| Model family                                 | English-only | Translation | Notes                                        |
-|----------------------------------------------|--------------|-------------|----------------------------------------------|
-| large-v3 / large-v3-turbo                    | No           | Yes         | Multilingual; turbo has fewer decoder layers |
-| medium / small / base / tiny                 | No           | Yes         | Multilingual; smaller = faster               |
-| medium.en / small.en / base.en / tiny.en     | Yes          | No          | English-only; pass language="en"             |
-| distil-whisper-large-v3 / medium.en / small.en | Varies     | No          | Distilled variants: faster, English-focused  |
+| Model family                                                | English-only | Translation | Notes                                                              |
+|-------------------------------------------------------------|--------------|-------------|--------------------------------------------------------------------|
+| large-v3                                                    | No           | Yes         | Multilingual; best translation quality                             |
+| large-v3-turbo                                              | No           | No          | Multilingual transcription only; translate is ignored              |
+| medium / small / base / tiny                                | No           | Yes         | Multilingual; translation quality drops with size                  |
+| medium.en / small.en / base.en / tiny.en                    | Yes          | No          | English-only; pass language="en"                                   |
+| distil-whisper-large-v3 / large-v3.5 / medium.en / small.en | Yes          | No          | Trained on English only; other languages come out as rough English |
 
 Important: large-v3-turbo, the .en models and all Distil variants DO NOT support translation. Requesting task_mode="translate" on one returns HTTP 400. If task_mode is omitted and the app's default is translate, the server transcribes instead.
 
