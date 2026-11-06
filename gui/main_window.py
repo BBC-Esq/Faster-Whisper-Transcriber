@@ -171,7 +171,10 @@ class MainWindow(QMainWindow):
 
         self.setWindowTitle("Faster Whisper Transcriber")
 
-        self.settings = QSettings("FasterWhisperTranscriber", "Transcriber")
+        self.settings = QSettings(
+            QSettings.IniFormat, QSettings.UserScope, "FasterWhisperTranscriber", "Transcriber"
+        )
+        self._migrate_legacy_settings()
 
         self.loaded_model_settings = config_manager.get_model_settings()
         self.task_mode = config_manager.get_value("task_mode", "transcribe")
@@ -307,6 +310,18 @@ class MainWindow(QMainWindow):
         if task_mode in ["transcribe", "translate"]:
             return task_mode
         return self.DEFAULTS["task_mode"]
+
+    def _migrate_legacy_settings(self) -> None:
+        if self.settings.allKeys():
+            return
+        legacy = QSettings("FasterWhisperTranscriber", "Transcriber")
+        keys = legacy.allKeys()
+        if not keys:
+            return
+        for key in keys:
+            self.settings.setValue(key, legacy.value(key))
+        self.settings.sync()
+        logger.info(f"Copied {len(keys)} saved settings from the registry to {self.settings.fileName()}")
 
     def _restore_state(self) -> None:
         logger.info("Restoring application state from QSettings")
