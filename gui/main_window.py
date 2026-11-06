@@ -311,13 +311,17 @@ class MainWindow(QMainWindow):
         if self.settings.allKeys():
             return
         legacy = QSettings("FasterWhisperTranscriber", "Transcriber")
-        keys = [k for k in legacy.allKeys() if not k.startswith("model/")]
-        if not keys:
+        if not legacy.allKeys():
             return
+        keys = [k for k in legacy.allKeys() if not k.startswith("model/")]
         for key in keys:
             self.settings.setValue(key, legacy.value(key))
         self.settings.sync()
-        logger.info(f"Copied {len(keys)} saved settings from the registry to {self.settings.fileName()}")
+        if self.settings.status() != QSettings.NoError:
+            logger.warning(f"Could not write {self.settings.fileName()}; keeping the registry settings")
+            return
+        legacy.clear()
+        logger.info(f"Moved {len(keys)} saved settings from the registry to {self.settings.fileName()}")
 
     def _restore_state(self) -> None:
         logger.info("Restoring application state from QSettings")
