@@ -54,10 +54,6 @@ SETTINGS_CLIPBOARD_DOCKED = "clipboard/docked"
 SETTINGS_CLIPBOARD_VISIBLE = "clipboard/visible"
 SETTINGS_CLIPBOARD_ALWAYS_ON_TOP = "clipboard/always_on_top"
 SETTINGS_APPEND_MODE = "clipboard/append_mode"
-SETTINGS_MODEL = "model/name"
-SETTINGS_DEVICE = "model/device"
-SETTINGS_QUANTIZATION = "model/quantization"
-SETTINGS_TASK_MODE = "model/task_mode"
 SETTINGS_AUDIO_DEVICE_NAME = "audio/device_name"
 SETTINGS_AUDIO_DEVICE_HOSTAPI = "audio/device_hostapi"
 SETTINGS_FILE_PANEL_VISIBLE = "file_panel/visible"
@@ -315,7 +311,7 @@ class MainWindow(QMainWindow):
         if self.settings.allKeys():
             return
         legacy = QSettings("FasterWhisperTranscriber", "Transcriber")
-        keys = legacy.allKeys()
+        keys = [k for k in legacy.allKeys() if not k.startswith("model/")]
         if not keys:
             return
         for key in keys:
@@ -338,14 +334,11 @@ class MainWindow(QMainWindow):
             self.resize(_DEFAULT_MAIN_WIDTH, _DEFAULT_MAIN_HEIGHT)
             self._center_on_screen()
 
-        saved_model = self.settings.value(SETTINGS_MODEL, self.DEFAULTS["model"])
-        saved_device = self.settings.value(SETTINGS_DEVICE, self.DEFAULTS["device"])
-        saved_quant = self.settings.value(
-            SETTINGS_QUANTIZATION, self.DEFAULTS["quantization"]
-        )
-        saved_task = self.settings.value(
-            SETTINGS_TASK_MODE, self.DEFAULTS["task_mode"]
-        )
+        saved_model_settings = config_manager.get_model_settings()
+        saved_model = saved_model_settings["model_name"]
+        saved_device = saved_model_settings["device_type"]
+        saved_quant = saved_model_settings["quantization_type"]
+        saved_task = config_manager.get_value("task_mode", self.DEFAULTS["task_mode"])
 
         model = self._validate_model(saved_model)
         device = self._validate_device(saved_device)
@@ -452,21 +445,17 @@ class MainWindow(QMainWindow):
 
         self.settings.setValue(SETTINGS_GEOMETRY, self.saveGeometry())
 
-        self.settings.setValue(
-            SETTINGS_MODEL,
-            self.loaded_model_settings.get("model_name", self.DEFAULTS["model"]),
-        )
-        self.settings.setValue(
-            SETTINGS_DEVICE,
-            self.loaded_model_settings.get("device_type", self.DEFAULTS["device"]),
-        )
-        self.settings.setValue(
-            SETTINGS_QUANTIZATION,
-            self.loaded_model_settings.get(
-                "quantization_type", self.DEFAULTS["quantization"]
-            ),
-        )
-        self.settings.setValue(SETTINGS_TASK_MODE, self.task_mode)
+        try:
+            config_manager.set_model_settings(
+                self.loaded_model_settings.get("model_name", self.DEFAULTS["model"]),
+                self.loaded_model_settings.get(
+                    "quantization_type", self.DEFAULTS["quantization"]
+                ),
+                self.loaded_model_settings.get("device_type", self.DEFAULTS["device"]),
+            )
+            config_manager.set_value("task_mode", self.task_mode)
+        except Exception as e:
+            logger.warning(f"Failed to save model settings: {e}")
 
         self.settings.setValue(
             SETTINGS_APPEND_MODE, self.clipboard_window.is_append_mode()
