@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import copy
+import shutil
 from pathlib import Path
 from typing import Any
 
 import yaml
 
-from utils import get_resource_path
+from utils import get_resource_path, get_settings_dir
 from core.logging_config import get_logger
 from core.exceptions import ConfigurationError
 
@@ -64,7 +65,8 @@ class ConfigManager:
     }
 
     def __init__(self):
-        self._config_path = Path(get_resource_path("config.yaml"))
+        self._config_path = Path(get_settings_dir()) / "config.yaml"
+        self._legacy_config_path = Path(get_resource_path("config.yaml"))
         self._config_cache: dict[str, Any] | None = None
         self._dirty = False
         self._flush_timer = None
@@ -146,8 +148,19 @@ class ConfigManager:
     def load_config(self) -> dict[str, Any]:
         return copy.deepcopy(self._ensure_cache())
 
+    def _migrate_legacy_config(self) -> None:
+        if self._config_path.exists() or not self._legacy_config_path.is_file():
+            return
+        try:
+            self._config_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(self._legacy_config_path, self._config_path)
+            logger.info(f"Copied settings from {self._legacy_config_path} to {self._config_path}")
+        except OSError as e:
+            logger.warning(f"Could not copy legacy config from {self._legacy_config_path}: {e}")
+
     def _load_from_file(self) -> dict[str, Any]:
         loaded_config = {}
+        self._migrate_legacy_config()
 
         try:
             if self._config_path.exists():

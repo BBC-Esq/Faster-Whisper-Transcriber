@@ -1,6 +1,25 @@
 import os
 import sys
 
+APP_DATA_DIR_NAME = "FasterWhisperTranscriber"
+
+
+def get_settings_dir() -> str:
+    if sys.platform == "win32":
+        base = os.environ.get("APPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Roaming")
+    else:
+        base = os.environ.get("XDG_CONFIG_HOME") or os.path.join(os.path.expanduser("~"), ".config")
+    return os.path.join(base, APP_DATA_DIR_NAME)
+
+
+def get_local_data_dir() -> str:
+    if sys.platform == "win32":
+        base = os.environ.get("LOCALAPPDATA") or os.path.join(os.path.expanduser("~"), "AppData", "Local")
+    else:
+        base = os.environ.get("XDG_STATE_HOME") or os.path.join(os.path.expanduser("~"), ".local", "state")
+    return os.path.join(base, APP_DATA_DIR_NAME)
+
+
 def get_resource_path(relative_path: str) -> str:
     """Get the path to a resource file, handling both dev and installed scenarios."""
     if getattr(sys, 'frozen', False):
